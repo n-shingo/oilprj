@@ -1,5 +1,5 @@
-#ifndef __stack_img_h__
-#define __stack_img_h__
+#ifndef __STACK_IMG_H__
+#define __STACK_IMG_H__
 
 
 #include <iostream>
@@ -76,4 +76,4 @@ Mat stackImages(Mat &img)
 	return stack;
 }
 
-#endif //__stack_img_h__
+#endif //___STACK_IMG_H__

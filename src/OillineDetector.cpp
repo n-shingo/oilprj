@@ -1,3 +1,4 @@
+#include "opencv2/opencv.hpp"
 #include "OillineDetector.h"
 #include "stack_img.h"
 
@@ -6,6 +7,13 @@
 // コンストラクタ
 //
 OillineDetector::OillineDetector(){
+
+	// 処理を無視する画像下部の高さ
+	_ignore_bottom_size = 5;
+
+	// ガンマ補正
+	_gamma_base = 60;
+	_gamma_scale = 0.3;
 
 	// ガウシアン
 	_gaussian_window = 3;
@@ -85,14 +93,13 @@ int OillineDetector::Execute(Mat &src, double *dist, double *gl_theta, Mat &resu
 	//
 	// source image
 	//
-	Mat src_clone = src.clone();
-	line( src_clone, Point(0,src_clone.rows-1), Point(src_clone.cols-1, src_clone.rows-1), Scalar(0,0,0));
-	line( src_clone, Point(0,src_clone.rows-2), Point(src_clone.cols-1, src_clone.rows-2), Scalar(0,0,0));
 	int w = src.cols, h = src.rows;
+	Mat src_clone = src.clone();
+	rectangle( src_clone, Point(0, h-_ignore_bottom_size), Point(w-1,h-1), Scalar(0,0,0), -1);
 
 
 	// gamma correction
-	Mat gamma_img = auto_gamma_correction(src);
+	Mat gamma_img = auto_gamma_correction(src, _gamma_base, _gamma_scale);
 
 
 

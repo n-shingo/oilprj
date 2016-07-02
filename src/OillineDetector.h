@@ -33,6 +33,16 @@ public:
 	void SetDppX(double dpp_x){ _dpp_x = dpp_x; } // DppX(x軸方向の距離変換係数[mm/pix])を設定
 	void SetDppY(double dpp_y){ _dpp_y = dpp_y; } // DppY(y軸方向の距離変換係数[mm/pix])を設定
 
+	// 画像下部の無視する領域高さ[pix]
+	void SetIgnoreBottomSize( int size ){ _ignore_bottom_size = size; }
+	int GetIgnoreBottomSize( void ){ return _ignore_bottom_size; }
+	
+	// ガンマ補正 プロパティ
+	void SetGammaBase( double base ){ _gamma_base = base; }
+	double GetGammaBase( void ){ return _gamma_base; }
+	void SetGammaScale( double scale ){ _gamma_scale = scale; }
+	double GetGammaScale( void ){ return _gamma_scale; }
+	
 	// Gaussianフィルタ プロパティ
 	void SetGaussianWindow(int win){ _gaussian_window = win; }
 	int GetGaussianWindow(void){ return _gaussian_window; }
@@ -66,12 +76,12 @@ private:
 	void real_world_value(double rho, double theta, double* rho_gl, double* theta_gl, double* dist);
 
 	// ガンマ補正を行う
-	Mat auto_gamma_correction(Mat &src, double base = 60, double scale = 0.3);
+	Mat auto_gamma_correction(Mat &src, double base, double scale);
 
 	// hsvの閾値処理によってスリットラインを抽出した8bit画像を返す
 	// Hue[0-179], Sat[0-255], Val[0-255]において, th_hue_low < Hue <= th_hue_low && Sat <= th_sat && Val <= th_val
-	Mat hsv_slitline_threshold(Mat &src, int th_hue_low = 160, int th_hue_up = 7, int th_sat = 60, int th_val = 150);
-	Mat hsv_slitline_threshold2(Mat &src, int th_hue_low = 160, int th_hue_up = 7, int th_sat = 60, int th_val = 150);
+	Mat hsv_slitline_threshold(Mat &src, int th_hue_low, int th_hue_up, int th_sat, int th_val);
+	Mat hsv_slitline_threshold2(Mat &src, int th_hue_low, int th_hue_up, int th_sat, int th_val);
 
 	// つながっている領域毎に画像を分割する.
 	// dstは分割された画像群, rectsは元画像に対する矩形領域を表す
@@ -118,6 +128,13 @@ private:
 	int _birdBtmLft; // 俯瞰画像左下座標
 	int _birdBtmRgt; // 俯瞰画像右下座標
 	Mat _homoMat;    // ホモグラフィ行列
+
+	// 処理を無視する下部の画像サイズ
+	int _ignore_bottom_size;
+
+	// ガンマ補正
+	double _gamma_base; // ガンマ補正基準値
+	double _gamma_scale; // ガンマ補正スケール
 
 	// ガウシアン
 	int _gaussian_window;  // 窓サイズ(奇数)

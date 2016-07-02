@@ -25,4 +25,7 @@ target_link_libraries(oiledge-detector ssm /usr/local/lib/kaw_lib.a ${OPENCV_LIB
 add_executable(oiledge-viewer ./src/oiledge-viewer.cpp) 
 target_link_libraries(oiledge-viewer ssm)
 
+add_executable(oiledge-debug ./src/oiledge-debug.cpp ./src/OillineDetector.cpp)
+target_link_libraries(oiledge-debug ssm /usr/local/lib/kaw_lib.a ${OPENCV_LIBRARIES})
+
 
