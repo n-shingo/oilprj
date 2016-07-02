@@ -49,6 +49,9 @@ public:
 	void SetGaussianSigma(double sigma){ _gaussian_sigma = sigma; }
 	double GetGaussianSigma(void){ return _gaussian_sigma; }
 
+	// エッジ点とみなす最大移動量
+	void SetAcceptableMaxMovement( double movement ){ _acceptable_max_movement = movement; }
+	double GetAcceptableMaxMovement( void ){ return _acceptable_max_movement; }
 
 private:
 	////////////////////
@@ -106,12 +109,17 @@ private:
 	// 直線を描画する
 	Mat draw_lines(Mat img, vector<Vec2f> lines, Scalar color, int thickness = 1);
 
+	// エッジ点が許容範囲内で動いたかチェック
+	int is_acceptable_movement( vector<Point2d> &prePnts, vector<Point2d> &latPnts, double threshold );
 
 
 
 	////////////////////
 	//   メンバ変数    //
 	////////////////////
+	
+	// 最後に検出されたエッジ2点;
+	vector<Point2d> _last_points;
 
 	// カメラ校正パラメータ
 	Mat _calibIntrinsic;
@@ -148,6 +156,9 @@ private:
 
 	// 分割した領域の最低サイズ
 	int _min_region_size;
+
+	// エッジ点が移動したとみなす最大移動量[pix]
+	double _acceptable_max_movement;
 
 	// 曲率
 	int _curve_interval; // 曲率のためのインターバル

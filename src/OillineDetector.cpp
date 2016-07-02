@@ -8,6 +8,10 @@
 //
 OillineDetector::OillineDetector(){
 
+	// 最後に検出された点
+	_last_points.push_back( Point2d( -1.0, -1.0 ) );
+	_last_points.push_back( Point2d( -1.0, -1.0 ) );
+
 	// 処理を無視する画像下部の高さ
 	_ignore_bottom_size = 5;
 
@@ -27,6 +31,10 @@ OillineDetector::OillineDetector(){
 
 	// 分割した領域の最低サイズ
 	_min_region_size = 50;
+
+
+	// エッジ点とみなす最大移動量
+	_acceptable_max_movement = 20.0;
 
 	// 曲率
 	_curve_interval = 15; // 曲率のためのインターバル
@@ -203,6 +211,23 @@ int OillineDetector::Execute(Mat &src, double *dist, double *gl_theta, Mat &resu
 	}
 
 
+	//
+	// 前回から大きくずれていないかチェック
+	//
+	int acceptable_move = 0;
+	if( max_curves.size() == 2 ){
+		if( max_curves[0].y > max_curves[1].y ){
+			Point2d tmp = max_curves[0];
+			max_curves[0] = max_curves[1];
+			max_curves[1] = tmp;
+		}
+		acceptable_move = is_acceptable_movement( _last_points, max_curves, _acceptable_max_movement );
+
+		// 新しい点を覚えておく
+		_last_points[0] = max_curves[0];
+		_last_points[1] = max_curves[1];
+	}
+
 
 	//
 	// 曲率のグラフを描画する
@@ -234,13 +259,16 @@ int OillineDetector::Execute(Mat &src, double *dist, double *gl_theta, Mat &resu
 	//
 	// 最大曲率位置を原画像にプロットする
 	//
-	Scalar plot_color = (max_curves.size() == 2) ? Scalar(0, 255, 0) : Scalar(0, 0, 255);
+	Scalar result_color;
+	if( max_curves.size() != 2 ) result_color = Scalar(0,0,255); // Red
+	else if( acceptable_move == 0) result_color = Scalar(255,0,0); // Blue
+	else result_color = Scalar(0,255,0); // Green
 	for (int i = 0; i < max_curves.size(); i++)
 	{
 		int x = cvRound(max_curves[i].x);
 		int y = cvRound(max_curves[i].y);
 
-		circle(src_clone, Point(x, y), 5, plot_color);
+		circle(src_clone, Point(x, y), 5, result_color);
 	}
 
 
@@ -275,14 +303,18 @@ int OillineDetector::Execute(Mat &src, double *dist, double *gl_theta, Mat &resu
 	// 俯瞰画像に結果描画
 	vector<Vec2f> ln;
 	ln.push_back(Vec2f(rho, theta));
-	bird_img = draw_lines(bird_img, ln, Scalar(0, 255, 0));
-	//bird = drawPoints(bird, birdPoints, Scalar(0, 0, 255));
+	bird_img = draw_lines(bird_img, ln, result_color);
 
-	// 成功終了
+	// 結果画像作成
 	stackImages(src_clone);
 	stackImages(thresh_img);
 	stackImages(process_img);
 	result_img = stackImages(bird_img);
+	
+	if( acceptable_move == 0 )
+		return 0;
+
+	// 成功終了
 	return 1;
 }
 
@@ -848,4 +880,34 @@ Mat OillineDetector::draw_lines(Mat img, vector<Vec2f> lines, Scalar color, int 
 	}
 
 	return ret;
+}
+
+
+//
+// エッジ点が許容範囲内で動いたかチェック
+//
+int OillineDetector::is_acceptable_movement( vector<Point2d> &prePnts, vector<Point2d> &latPnts, double threshold ){
+
+	assert( prePnts.size()==2 && latPnts.size()==2);
+
+	// まだ前回の点が検出されていなければ、とりあえず許容内とみなす
+	if( prePnts[0].x < 0 ) return 1;
+
+	// 距離を比べる
+	double d;
+	for( int i=0; i<2; i++ ){
+		d = (prePnts[i].x-latPnts[i].x)*(prePnts[i].x-latPnts[i].x)
+			 + (prePnts[i].y-latPnts[i].y)*(prePnts[i].y-latPnts[i].y);
+
+		if( d >= threshold * threshold ){
+			return 0;
+		}
+	}
+
+
+	// 許容内
+	return 1;
+
+
+
 }
