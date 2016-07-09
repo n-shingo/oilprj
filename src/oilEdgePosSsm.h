@@ -4,7 +4,7 @@
 #define SNAME_OILEDGEPOS "oilEdgePos"
 
 typedef struct{
-	double dist;
+	int dist;
 	double theta;
 	int status;
 }OilEdgePos;
