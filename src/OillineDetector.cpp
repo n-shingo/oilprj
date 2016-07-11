@@ -12,9 +12,6 @@ OillineDetector::OillineDetector(){
 	_last_points.push_back( Point2d( -1.0, -1.0 ) );
 	_last_points.push_back( Point2d( -1.0, -1.0 ) );
 
-	// 処理を無視する画像下部の高さ
-	_ignore_bottom_size = 5;
-
 	// ガンマ補正
 	_gamma_base = 60;
 	_gamma_scale = 0.3;
@@ -103,7 +100,6 @@ int OillineDetector::Execute(Mat &src, double *dist, double *gl_theta, Mat &resu
 	//
 	int w = src.cols, h = src.rows;
 	Mat src_clone = src.clone();
-	rectangle( src_clone, Point(0, h-_ignore_bottom_size), Point(w-1,h-1), Scalar(0,0,0), -1);
 
 
 	// gamma correction

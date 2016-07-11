@@ -33,10 +33,6 @@ public:
 	void SetDppX(double dpp_x){ _dpp_x = dpp_x; } // DppX(x軸方向の距離変換係数[mm/pix])を設定
 	void SetDppY(double dpp_y){ _dpp_y = dpp_y; } // DppY(y軸方向の距離変換係数[mm/pix])を設定
 
-	// 画像下部の無視する領域高さ[pix]
-	void SetIgnoreBottomSize( int size ){ _ignore_bottom_size = size; }
-	int GetIgnoreBottomSize( void ){ return _ignore_bottom_size; }
-	
 	// ガンマ補正 プロパティ
 	void SetGammaBase( double base ){ _gamma_base = base; }
 	double GetGammaBase( void ){ return _gamma_base; }
@@ -136,9 +132,6 @@ private:
 	int _birdBtmLft; // 俯瞰画像左下座標
 	int _birdBtmRgt; // 俯瞰画像右下座標
 	Mat _homoMat;    // ホモグラフィ行列
-
-	// 処理を無視する下部の画像サイズ
-	int _ignore_bottom_size;
 
 	// ガンマ補正
 	double _gamma_base; // ガンマ補正基準値

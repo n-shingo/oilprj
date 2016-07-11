@@ -53,10 +53,6 @@ int main(int argc, char ** argv)
     det.SetDppX( 2.521 ); // DppX(x軸方向の距離変換係数[mm/pix])を設定
     det.SetDppY( 2.238 ); // DppY(y軸方向の距離変換係数[mm/pix])を設定
 
-	
-	// 成功フラグ
-	double succeeded;
-	
     // <--- DECLARATION
 
     //==========================================================
