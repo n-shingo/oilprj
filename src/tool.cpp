@@ -1,16 +1,11 @@
-#ifndef __STACK_IMG_H__
-#define __STACK_IMG_H__
-
-
-#include <iostream>
-#include "opencv2/opencv.hpp"
-
+#include <sys/time.h>
+#include "tool.h"
 
 // 画像の積層ツール関数
 #define STACK_IMAGES_ROWS 2
 #define STACK_IMAGES_INTVAL 2
-Mat stackImages(Mat &img);
 
+using namespace cv;
 
 // 画像を積み重ねた画像を返す
 Mat stackImages(Mat &img)
@@ -58,8 +53,8 @@ Mat stackImages(Mat &img)
 	else
 		height = (count * (imgH + STACK_IMAGES_INTVAL));
 
-	// 画像作成(白地)
-	Mat newStack = Mat(height, width, CV_8UC3, Scalar(255, 255, 255));
+	// 画像作成(背景グレイ)
+	Mat newStack = Mat(height, width, CV_8UC3, Scalar(128, 128, 128));
 
 	// 旧画像のコピー
 	Mat roi_dst = newStack(Rect(0, 0, stack.cols, stack.rows));
@@ -76,4 +71,17 @@ Mat stackImages(Mat &img)
 	return stack;
 }
 
-#endif //___STACK_IMG_H__
+
+//
+// タイマー関連
+//
+static struct timeval timerst;
+void timerStart(void){
+	gettimeofday( &timerst, NULL );
+}
+double timerTime(void){
+	timeval ed;
+	gettimeofday( &ed, NULL );
+	return (ed.tv_sec-timerst.tv_sec) + (ed.tv_usec-timerst.tv_usec)*1.0E-6;
+}
+

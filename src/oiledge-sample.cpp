@@ -1,9 +1,10 @@
 #include <stdio.h>
 #include <iostream>
 #include <sys/stat.h>
-#include <unistd.h>
 #include "opencv2/opencv.hpp"
 #include "OillineDetector.h"
+#include "OillineDetector2.h"
+#include "tool.h"
 
 using namespace std;
 using namespace cv;
@@ -30,11 +31,15 @@ int main( int argc, char **argv )
 
 	
 	OillineDetector det;
+	OillineDetector2 det2;
+
 	double dist, theta;
-	Mat img, result;
+	Mat img, result, result2;
 	int key;
+	bool playing = true;
 
 	while(1){
+
 		sprintf(filename, "%s%s%05ld.bmp", dirname, basename, frameNum );
 		cout << filename << endl;
 		if( stat(filename, &st ) == 0 )
@@ -45,18 +50,41 @@ int main( int argc, char **argv )
 			continue;
 		}
 
+		/*
+		timerStart();
 		det.Execute(img, &dist, &theta, result);
-
+		cout << timerTime() << "sec" << endl;
 		imshow( "result", result );
+		*/
 
-		key = waitKey(1);
-		if( key == 27 )
-			break;
-		else if( key == 'k' )
-			frameNum = MAX(0, --frameNum);
-		else
-			frameNum++;
-		
+		timerStart();
+		det2.Execute( img, &dist, &theta, result2 );
+		cout << timerTime() << "sec" << endl;
+		imshow( "result2", result2);
+
+		while(1){
+			key = waitKey(1);
+			if( key == 27 ) // esc key
+				break;
+			else if( key == 'j' ){
+				frameNum++;
+				playing = false;
+				break;
+			}
+			else if( key == 'k' ){
+				frameNum = MAX(0, frameNum-1);
+				playing = false;
+				break;
+			}
+			else if( key == ' ' )
+				playing = true;
+
+			if( playing ){
+				frameNum++;
+				break;
+			}
+		}
+		if( key == 27 ) break;
 
 	}
 

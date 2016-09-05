@@ -1,12 +1,12 @@
-#ifndef __OILLINE_DETECTOR_H__
-#define __OILLINE_DETECTOR_H__
+#ifndef __OILLINE_DETECTOR2_H__
+#define __OILLINE_DETECTOR2_H__
 
 #include <opencv2/opencv.hpp>
 
 using namespace std;
 using namespace cv;
 
-class OillineDetector{
+class OillineDetector2{
 
 	/////////////////
 	// 公開メソッド  //
@@ -14,11 +14,10 @@ class OillineDetector{
 public:
 
 	// コンストラクタ
-	OillineDetector();
+	OillineDetector2();
 
 	// エッジ抽出実行
 	int Execute(Mat &src, double *dist, double *gl_theta, Mat &result_img);
-	int Execute1(Mat &src, double *dist, double *gl_theta, Mat &result_img); // 2016/08/10 JX実験で使用した旧ver.
 
 	/////////////////
 	// プロパティ   //
@@ -77,36 +76,38 @@ private:
 
 	// ガンマ補正を行う
 	Mat auto_gamma_correction(Mat &src, double base, double scale);
+	
+	// 位置xの縦ラインピークをcnt個取得する．ただしth以上の値.
+	vector<int> find_vertical_peaks( Mat &gray, int x, int minInterval, int cnt, int th );
+	
+	// 距離th以下のピーク値をチェーン化する
+	// margin, step は入力するピーク値の最左座標[pix]と間隔[pix]
+	vector< vector<cv::Point> > make_chains( vector< vector<int> > &peaks, int th, int margin, int step );
 
-	// hsvの閾値処理によってスリットラインを抽出した8bit画像を返す
-	// Hue[0-179], Sat[0-255], Val[0-255]において, th_hue_low < Hue <= th_hue_low && Sat <= th_sat && Val <= th_val
-	Mat hsv_slitline_threshold(Mat &src, int th_hue_low, int th_hue_up, int th_sat, int th_val);
-	Mat hsv_slitline_threshold2(Mat &src, int th_hue_low, int th_hue_up, int th_sat, int th_val);
+	// ぐちゃぐちゃしたチェーンをchainsから削除する．[長さ/端点直線距離]がthより大きいと削除される.
+	void remove_noisy_chains( vector< vector<Point> > &chains, double th );
+	
+	// 二値化処理によってのっぺりとしたピークを削除する（線でないものを削除する）
+	// 閾値は二値化した時の黒ピクセルの割合で、thより大きいとチェーンからピークが削除される
+	void remove_flat_peaks( vector< vector<Point> > &chains, Mat &gray, double th );
+	
+	// 平均値をしきい値とする二値化
+	void binarize_by_average( Mat &gray, int x, int y, int size, Mat &dst );
+
+	// 平均輝度の高いcnt個のチェーンに絞る
+	void focus_top_chains( vector< vector<cv::Point> > &chains, Mat &gray, int cnt );
+
+	// 線形補間により間を補完する
+	vector< vector<double> > interpolate_chains( vector< vector<Point> > &chains );
+
 
 	// つながっている領域毎に画像を分割する.
 	// dstは分割された画像群, rectsは元画像に対する矩形領域を表す
 	// ドットのような1点のデータは出力データに含めない
 	void split_image_region(Mat &gray, vector< Mat > &dst, vector< Rect > &rects);
 
-	// 領域内の黒領域を塗りつぶす
-	void fill_region(Mat &gray);
-
-	// 小さい領域を候補から除く
-	void remove_small_region( vector<Mat> &images, vector<Rect> &regions, int th );
-
-	// 細線化（水平方向に移動しつつ平均位置をプロットする）
-	vector<double> thining_horizontal_line(Mat &gray);
-
-	// 細線化されたデータをグループ化する
-	void fusion_thining_images( vector<Mat> &images, vector<Rect> &rects, vector< vector<double> > &lines );
 	// インターバル間での曲率を求める
 	vector<double> calc_curvature(vector<double> ps, int interval);
-
-	// 曲率のグラフを画像に描画する
-	Mat draw_curvature_plot(Mat img, vector<double> curvature, Scalar line_color, double threshold = CV_PI, Scalar th_color = Scalar(0, 0, 255));
-
-	// 分割された画像を合成する. 黒色部分は合成の対象から外す．
-	Mat fusion_splited_images(Size image_size, vector<Mat> images, vector<Rect> rects);
 
 	// 直線を描画する
 	Mat draw_lines(Mat img, vector<Vec2f> lines, Scalar color, int thickness = 1);
@@ -147,14 +148,23 @@ private:
 	int _gaussian_window;  // 窓サイズ(奇数)
 	double _gaussian_sigma; // 標準偏差
 
-	// HSV閾値
-	int _th_hue_low;  // hue下限
-	int _th_hue_up;   // hue上限
-	int _th_sat;      // sat下限
-	int _th_val;      // val下限
+	// 縦ラインのピーク検出
+	int _peak_margin;   // ピーク検出の最左点座標
+	int _peak_interval; // ピーク検出間隔
+	int _peak_isolate_interval; // ピーク間の最低距離
+	int _peak_count;    // 検出するピークの数
+	int _peak_min;      // ピークの最低輝度値 
 
-	// 分割した領域の最低サイズ
-	int _min_region_size;
+	// チェーン化
+	int _chain_max_interval; // チェーン化の最高距離
+	int _chain_min_size;     // チェーンの最低サイズ
+	double _chain_noisy_th;  // ぐちゃぐちゃしたチェーンの閾値
+	
+	// ピークの削除
+	double _flat_peak_th;    // のっぺりピークの閾値
+
+	// 二値化
+	int _binarize_size;  // 二値化を適用するサイズ[pix]
 
 	// エッジ点が移動したとみなす最大移動量[pix]
 	double _acceptable_max_movement;
@@ -168,10 +178,8 @@ private:
 	double _d_gl;  // 車軸とカメラ画像最下部までの距離[mm]
 	double _dpp_x; // x軸方向の距離変換係数[mm/pix]
 	double _dpp_y; // y軸方向の距離変換係数[mm/pix]
-
-
 };
 
 
 
-#endif // __OILLINE_DTECTOR_H__
+#endif // __OILLINE_DTECTOR2_H__

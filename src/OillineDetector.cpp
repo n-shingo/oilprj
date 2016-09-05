@@ -1,6 +1,6 @@
 #include "opencv2/opencv.hpp"
 #include "OillineDetector.h"
-#include "stack_img.h"
+#include "tool.h"
 
 
 //
@@ -27,7 +27,7 @@ OillineDetector::OillineDetector(){
 	_th_val = 180;     // val下限
 
 	// 分割した領域の最低サイズ
-	_min_region_size = 50;
+	_min_region_size = 30;
 
 
 	// エッジ点とみなす最大移動量
@@ -35,7 +35,7 @@ OillineDetector::OillineDetector(){
 
 	// 曲率
 	_curve_interval = 15; // 曲率のためのインターバル
-	_th_curve_max = 0.38; // 溶接溝における曲率の最低値
+	_th_curve_max = 0.30; // 溶接溝における曲率の最低値
 	
 	// カメラサイズ
 	_camW = 640;
@@ -131,21 +131,10 @@ int OillineDetector::Execute(Mat &src, double *dist, double *gl_theta, Mat &resu
 	//
 	// 小さい画像を候補から削除
 	//
-	vector <Mat>::iterator it = region_images.begin();
-	vector <Rect>::iterator it_rect = region_rects.begin();
-	while (it != region_images.end())
-	{
-		if ((*it).rows < this->_min_region_size && (*it).cols < _min_region_size){
-			it = region_images.erase(it);
-			it_rect = region_rects.erase(it_rect);
-		}
-		else{
-			it++;
-			it_rect++;
-		}
-	}
+	remove_small_region( region_images, region_rects, _min_region_size );
 
-	// 領域なし
+
+	// check! 領域なし
 	if (region_images.size() == 0){
 		stackImages(src);
 		result_img = stackImages(thresh_img);
@@ -157,26 +146,37 @@ int OillineDetector::Execute(Mat &src, double *dist, double *gl_theta, Mat &resu
 	//
 	// 内側の黒領域を埋める
 	//
+	vector <Mat>::iterator it = region_images.begin();
 	for (it = region_images.begin(); it != region_images.end(); it++)
 		fill_region(*it);
 
 
 	//
-	// 細線化 & 曲率を求める
+	// 細線化
 	//
 	vector< vector<double> > lines;
-	vector<double> curve;
-	vector< vector<double> > curves;
 	for (it = region_images.begin(); it != region_images.end(); it++){
 
-		// 細線化
 		vector<double> line = thining_horizontal_line(*it);
 		lines.push_back(line);
+	}
 
-		// 曲率
-		curve = calc_curvature(line, _curve_interval);
+	//
+	// 細線化されたデータをグループ化する
+	//
+	fusion_thining_images( region_images, region_rects, lines );
+
+	//
+	// 曲率を求める
+	//
+	vector<double> curve;
+	vector< vector<double> > curves;
+	vector< vector<double> >::iterator lit;
+	for( lit = lines.begin(); lit != lines.end(); lit++ ){
+		curve = calc_curvature( *lit, _curve_interval);
 		curves.push_back(curve);
 	}
+	
 
 	//
 	// 最大曲率を求める
@@ -589,7 +589,7 @@ Mat OillineDetector::hsv_slitline_threshold2(Mat &src, int th_hue_low, int th_hu
 
 
 //
-// つながっている領域毎に画像を分割する.
+// つながっている(8近傍)領域毎に画像を分割する.
 // dstは分割された画像群, rectsは元画像に対する矩形領域を表す
 // ドットのような1点のデータは出力データに含めない
 //
@@ -699,6 +699,123 @@ vector<double> OillineDetector::thining_horizontal_line(Mat &gray){
 	return ret;
 
 }
+
+//
+// 細線化されたデータをグループ化する
+//
+void OillineDetector::fusion_thining_images( vector<Mat> &images, vector<Rect> &rects, vector< vector<double> > &lines )
+{
+	int th = 20;
+
+	// グループ化されなくなるまで繰り返す
+	while(1){
+
+		int cnt = images.size();
+		if( cnt <= 2 ) return;
+
+		// 線の左端と右端の座標取得
+		vector< Point2d > leftPnts, rightPnts;
+		for( int i=0; i<cnt; i++ ){
+			leftPnts.push_back( Point2d( rects[i].x, rects[i].y+lines[i][0] ));
+			rightPnts.push_back( Point2d( rects[i].x+rects[i].width-1, rects[i].y+lines[i][lines[i].size()-1]) );
+	
+		}
+
+
+		// 結合点オブジェクトleft,rightを見つける
+		int left=-1, right=-1;
+		for( int i=0; i<cnt; i++ ){
+			for( int j=0; j<cnt; j++ ){
+
+				// 同じデータは連結しない
+				if( i==j ) continue;
+
+				// iの右端がjの左端より右であれば連結しない
+				if( rightPnts[i].x >= leftPnts[j].x ) continue;
+
+				// しきい値以内の距離かチェック
+				double dx = rightPnts[i].x - leftPnts[j].x;
+				double dy = rightPnts[i].y - leftPnts[j].y;
+				if( dx*dx + dy*dy <= th*th )
+				{
+					left = i;
+					right = j;
+					break;
+				}
+
+			}
+			// すでに連結ペアが見つかっているかチェック
+			if( left >= 0 ) break;
+		}
+
+		// 連結するペアがなければ終了
+		if( left < 0 ) return;
+
+		//
+		// ここからi(left), j(right)を連結
+		//
+
+		// 連結準備
+		Mat leftImg = images[left];
+		Rect leftRect = rects[left];
+		vector<double> leftLine = lines[left];
+		Mat rightImg = images[right];
+		Rect rightRect = rects[right];
+		vector<double> rightLine = lines[right];
+		int newX = leftRect.x;
+		int newY = MIN(leftRect.y, rightRect.y);
+		int newW = (rightRect.x+rightRect.width) - leftRect.x;
+		int newH = MAX(leftRect.y+leftRect.height, rightRect.y+rightRect.height) - newY;
+		int shiftLeft  = MAX(0, leftRect.y-rightRect.y);  // 画像上縦方向のシフト量
+		int shiftRight = MAX(0, rightRect.y-leftRect.y);
+
+		// 新しい矩形
+		Rect newRect( newX, newY, newW, newH);
+
+		// 新しい細線化データ作成
+		vector<double> newLine;
+		for( int i=0; i<leftLine.size(); i++ )
+			newLine.push_back( leftLine[i] + shiftLeft );
+
+		int newLineCnt = rightRect.x - (leftRect.x + leftRect.width);
+		double y1 = leftLine[leftLine.size()-1]+shiftLeft;
+		double y2 = rightLine[0] + shiftRight;
+		for( int i=0; i<newLineCnt; i++ ){
+			double data = (y2-y1)*(i+1)/(newLineCnt+1) + y1;
+			newLine.push_back(data);
+		}
+
+		for( int i=0; i<rightLine.size(); i++ )
+			newLine.push_back( rightLine[i] + shiftRight );
+
+
+		// サイズチェック
+		assert( newLine.size() == newW );
+
+		// 新しい画像作成
+		Mat newImg( newH, newW, CV_8UC1, Scalar(0) );
+		for( int i=0; i<newW; i++ ){
+			newImg.data[ cvRound(newLine[i])*newImg.step + i ] = 255;
+		}
+
+		//
+		// 元のデータを削除し、新しいデータを追加する
+		//
+		int del1 = MAX( left, right );
+		int del2 = MIN( left, right );
+		images.erase( images.begin() + del1 );
+		rects.erase( rects.begin() + del1 );
+		lines.erase( lines.begin() + del1 );
+		images.erase( images.begin() + del2 );
+		rects.erase( rects.begin() + del2 );
+		lines.erase( lines.begin() + del2 );
+		
+		images.push_back( newImg );
+		rects.push_back( newRect );
+		lines.push_back( newLine );
+	}
+}
+
 
 //
 // インターバル間での曲率を求める
@@ -904,6 +1021,253 @@ int OillineDetector::is_acceptable_movement( vector<Point2d> &prePnts, vector<Po
 	// 許容内
 	return 1;
 
+}
 
+void OillineDetector::remove_small_region( vector<Mat> &images, vector<Rect> &rects, int th )
+{
+	vector <Mat>::iterator it = images.begin();
+	vector <Rect>::iterator it_rect = rects.begin();
+	while (it != images.end())
+	{
+		if ((*it).rows < th && (*it).cols < th){
+			it = images.erase(it);
+			it_rect = rects.erase(it_rect);
+		}
+		else{
+			it++;
+			it_rect++;
+		}
+	}
 
 }
+
+//
+// エッジ抽出実行1(2016/08/10のJX実験で使用)
+//
+int OillineDetector::Execute1(Mat &src, double *dist, double *gl_theta, Mat &result_img){
+
+	Mat empty;
+	stackImages(empty);
+
+	*dist = *gl_theta = 0.0;
+
+	//
+	// source image
+	//
+	int w = src.cols, h = src.rows;
+	Mat src_clone = src.clone();
+
+
+	// gamma correction
+	Mat gamma_img = auto_gamma_correction(src, _gamma_base, _gamma_scale);
+
+
+
+	//
+	// Gaussian
+	//
+	Mat gauss;
+	cv::GaussianBlur(gamma_img, gauss, Size( _gaussian_window, _gaussian_window), _gaussian_sigma, _gaussian_sigma);
+	
+
+	//
+	// HSVでスリット領域抽出
+	//
+	Mat thresh_img = hsv_slitline_threshold2(gauss, _th_hue_low, _th_hue_up, _th_sat, _th_val);
+
+
+	//
+	//  連続領域毎に画像を切り出す
+	//
+	vector <Mat> region_images;
+	vector <Rect> region_rects;
+	split_image_region(thresh_img, region_images, region_rects);
+
+
+	//
+	// 小さい画像を候補から削除
+	//
+	vector <Mat>::iterator it = region_images.begin();
+	vector <Rect>::iterator it_rect = region_rects.begin();
+	while (it != region_images.end())
+	{
+		if ((*it).rows < this->_min_region_size && (*it).cols < _min_region_size){
+			it = region_images.erase(it);
+			it_rect = region_rects.erase(it_rect);
+		}
+		else{
+			it++;
+			it_rect++;
+		}
+	}
+
+	// 領域なし
+	if (region_images.size() == 0){
+		stackImages(src);
+		result_img = stackImages(thresh_img);
+		return 0;
+
+	}
+
+
+	//
+	// 内側の黒領域を埋める
+	//
+	for (it = region_images.begin(); it != region_images.end(); it++)
+		fill_region(*it);
+
+
+	//
+	// 細線化 & 曲率を求める
+	//
+	vector< vector<double> > lines;
+	vector<double> curve;
+	vector< vector<double> > curves;
+	for (it = region_images.begin(); it != region_images.end(); it++){
+
+		// 細線化
+		vector<double> line = thining_horizontal_line(*it);
+		lines.push_back(line);
+
+		// 曲率
+		curve = calc_curvature(line, _curve_interval);
+		curves.push_back(curve);
+	}
+
+
+	//
+	// 最大曲率を求める
+	//
+	vector<int> curve_max_indices;
+	for (int i = 0; i < curves.size(); i++){
+		int max = 0;
+		for (int j = 0; j < curves[i].size(); j++){
+			if (curves[i][j] > curves[i][max])
+				max = j;
+		}
+		curve_max_indices.push_back(max);
+	}
+
+	//
+	// 最大曲率位置を求める
+	//
+	vector<Point2d> max_curves;
+	for (int i = 0; i < curve_max_indices.size(); i++)
+	{
+		double curvature = curves[i][curve_max_indices[i]];
+		if (curvature > _th_curve_max){
+			double x = (double)(region_rects[i].x + curve_max_indices[i]);
+			double y = (double)(region_rects[i].y + lines[i][curve_max_indices[i]]);
+			Point2d p(x, y);
+			max_curves.push_back(p);
+		}
+	}
+
+
+	//
+	// 前回から大きくずれていないかチェック
+	//
+	int acceptable_move = 0;
+	if( max_curves.size() == 2 ){
+		if( max_curves[0].y > max_curves[1].y ){
+			Point2d tmp = max_curves[0];
+			max_curves[0] = max_curves[1];
+			max_curves[1] = tmp;
+		}
+		acceptable_move = is_acceptable_movement( _last_points, max_curves, _acceptable_max_movement );
+
+		// 新しい点を覚えておく
+		_last_points[0] = max_curves[0];
+		_last_points[1] = max_curves[1];
+	}
+
+
+	//
+	// 曲率のグラフを描画する
+	//
+	vector<Mat> curvature_images;
+	for (int i = 0; i < region_images.size(); i++)
+	{
+		Mat c_graph = draw_curvature_plot(region_images[i], curves[i], Scalar(0, 255, 0), _th_curve_max);
+		curvature_images.push_back(c_graph);
+	}
+
+	//
+	// 分割＆処理した画像を元に合成する
+	//
+	Mat process_img = fusion_splited_images(Size(w, h), curvature_images, region_rects);
+
+	//
+	// 校正画像作成
+	//
+	Mat calib_img;
+	cameara_calibrate(src, calib_img);
+
+	//
+	// 俯瞰画像作成
+	//
+	Mat bird_img;
+	make_birdimg(calib_img, bird_img);
+
+	//
+	// 最大曲率位置を原画像にプロットする
+	//
+	Scalar result_color;
+	if( max_curves.size() != 2 ) result_color = Scalar(0,0,255); // Red
+	else if( acceptable_move == 0) result_color = Scalar(255,0,0); // Blue
+	else result_color = Scalar(0,255,0); // Green
+	for (int i = 0; i < max_curves.size(); i++)
+	{
+		int x = cvRound(max_curves[i].x);
+		int y = cvRound(max_curves[i].y);
+
+		circle(src_clone, Point(x, y), 5, result_color);
+	}
+
+
+	// ２点なければ失敗
+	if (max_curves.size() != 2)
+	{
+		stackImages(src_clone);
+		stackImages(thresh_img);
+		stackImages(process_img);
+		result_img = stackImages(bird_img);
+		return 0;
+	}
+
+	//
+	// 俯瞰画像の座標に変換
+	//
+	vector<Point2d> birdPoints = to_bird_coordinate(max_curves);
+
+	//
+	// 俯瞰画像のrhoとシータを求める
+	//
+	double rho, theta;
+	get_rho_theta(birdPoints[0], birdPoints[1], &rho, &theta);
+
+	//
+	// 実空間上のrhoとthetaを求める
+	//
+	double gl_rho;
+	real_world_value(rho, theta, &gl_rho, gl_theta, dist);
+	
+
+	// 俯瞰画像に結果描画
+	vector<Vec2f> ln;
+	ln.push_back(Vec2f(rho, theta));
+	bird_img = draw_lines(bird_img, ln, result_color);
+
+	// 結果画像作成
+	stackImages(src_clone);
+	stackImages(thresh_img);
+	stackImages(process_img);
+	result_img = stackImages(bird_img);
+	
+	if( acceptable_move == 0 )
+		return 0;
+
+	// 成功終了
+	return 1;
+}
+
