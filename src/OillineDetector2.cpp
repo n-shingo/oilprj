@@ -9,9 +9,8 @@
 //
 OillineDetector2::OillineDetector2(){
 
-	// 最後に検出された点
-	_last_points.push_back( Point2d( -1.0, -1.0 ) );
-	_last_points.push_back( Point2d( -1.0, -1.0 ) );
+	// スリット数
+	_slitCnt = 2;
 
 	// ガンマ補正
 	_gamma_base = 60;
@@ -24,7 +23,7 @@ OillineDetector2::OillineDetector2(){
 	// 縦ラインのピーク検出
 	_peak_margin = 0;   // ピーク検出の最左点座標
 	_peak_interval = 1; // ピーク検出間隔
-	_peak_isolate_interval = 10; // ピーク間の最低距離
+	_peak_isolate_interval = 20; // ピーク間の最低距離
 	_peak_count = 5;    // 検出するピークの数
 	_peak_min = 150;    // ピークの最低輝度値 
 
@@ -39,9 +38,6 @@ OillineDetector2::OillineDetector2(){
 	// 二値化
 	_binarize_size = 25;  // 二値化を適用するサイズ[pix]
 
-
-	// エッジ点とみなす最大移動量
-	_acceptable_max_movement = 20.0;
 
 	// 曲率
 	_curve_interval = 15; // 曲率のためのインターバル
@@ -147,6 +143,17 @@ int OillineDetector2::Execute(Mat &src, double *dist, double *gl_theta, Mat &res
 
 
 	//
+	// ぐちゃぐちゃしたチェーンを削除
+	//
+	remove_noisy_chains( chains, _chain_noisy_th );
+
+	//
+	// のっぺりとしたピークを削除(線っぽいピークだけに絞る)
+	//
+	remove_flat_peaks( chains, gray, _flat_peak_th );
+
+
+	//
 	// 短いチェーンを削除
 	//
 	for( int i=0; i<chains.size(); i++ ){
@@ -157,34 +164,28 @@ int OillineDetector2::Execute(Mat &src, double *dist, double *gl_theta, Mat &res
 	}
 
 	//
-	// ぐちゃぐちゃしたチェーンを削除
-	//
-	remove_noisy_chains( chains, _chain_noisy_th );
-
-	//
-	// のっぺりとしたピークを削除(線っぽいピークだけに絞る)
-	//
-	remove_flat_peaks( chains, gray, _flat_peak_th );
-
-	//
 	// 平均輝度の高いものに絞る
 	//
-	int topCnt = 2;
-	focus_top_chains( chains, gray, topCnt );
+	focus_top_chains( chains, gray, _slitCnt );
 
+	//
 	// 抜けた箇所を線形補間する
+	//
 	vector< vector<double> > intplChains;
 	intplChains = interpolate_chains( chains );
 
-
+	//
 	// 曲率を計算
+	//
 	vector< vector<double> > curves;
 	for( int i=0; i<intplChains.size(); i++ ){
 		vector<double> curve = calc_curvature( intplChains[i], _curve_interval );
 		curves.push_back(curve);
 	}
-
+	
+	//
 	// 最大曲率を求める
+	//
 	vector<int> curve_max_indexes;
 	for( int i=0; i<curves.size(); i++ ){
 		int max = 0;
@@ -195,8 +196,10 @@ int OillineDetector2::Execute(Mat &src, double *dist, double *gl_theta, Mat &res
 		curve_max_indexes.push_back(max);
 	}
 
+	//
 	// 最大曲率位置を求める
-	vector<Point2d> max_curves;
+	//
+	vector<Point2d> max_curves_points;
 	for( int i=0; i<curve_max_indexes.size(); i++ )
 	{
 		double curvature = curves[i][curve_max_indexes[i]];
@@ -204,41 +207,59 @@ int OillineDetector2::Execute(Mat &src, double *dist, double *gl_theta, Mat &res
 			double x = (double)(chains[i][0].x + curve_max_indexes[i]);
 			double y = intplChains[i][curve_max_indexes[i]];
 			Point2d p(x,y);
-			max_curves.push_back(p);
+			max_curves_points.push_back(p);
 		}
 	}
 
 	//
-	// 前回から大きくずれていないかチェック
+	// 許容内の移動か調べる
 	//
-	int acceptable_move = 0;
-	if( max_curves.size() == 2 ){
-		if( max_curves[0].y > max_curves[1].y ){
-			Point2d tmp = max_curves[0];
-			max_curves[0] = max_curves[1];
-			max_curves[1] = tmp;
-		}
-		acceptable_move = is_acceptable_movement( _last_points, max_curves, _acceptable_max_movement );
+	int accept_move = is_acceptable_movement( _last_points, max_curves_points, 20.0 );
 
-		// 新しい点を覚えておく
-		_last_points[0] = max_curves[0];
-		_last_points[1] = max_curves[1];
-	}
-
+	//
+	// 新しいエッジ点をとっておく
+	//
+	_last_points.clear();
+	for( int i=0;  i<max_curves_points.size(); i++ )
+		_last_points.push_back( max_curves_points[i] );
+	
 	//
 	// エッジ点抽出結果を描画
 	//
-	Scalar result_color;
-	if( max_curves.size() != 2 ) result_color = Scalar(0,0,255); // Red
-	else if( acceptable_move == 0) result_color = Scalar(255,0,0); // Blue
-	else result_color = Scalar(0,255,0); // Green
-	for( int i=0; i<max_curves.size(); i++ ){
-		int x = cvRound( max_curves[i].x);
-		int y = cvRound( max_curves[i].y);
-		circle( src_clone, Point(x,y), 5, result_color);
 
+	// 検出したスリットラインの描画
+	for( int i=0; i<chains.size(); i++ )
+		polylines( src_clone, chains[i], false, Scalar(0,0,255), 3 );
+
+	// エッジ点の描画
+	Scalar result_color;
+	if( max_curves_points.size() < 2 ) result_color = Scalar(0,0,255); // Red
+	else if( accept_move == 0) result_color = Scalar(255,0,0); // Blue
+	else result_color = Scalar(0,255,0); // Green
+	for( int i=0; i<max_curves_points.size(); i++ ){
+		int x = cvRound( max_curves_points[i].x);
+		int y = cvRound( max_curves_points[i].y);
+		circle( src_clone, Point(x,y), 5, result_color);
 	}
 
+	//
+	// 俯瞰画像の座標に変換
+	//
+	vector<Point2d> birdPoints = to_bird_coordinate(max_curves_points);
+	
+	//
+	// 俯瞰画像のrhoとシータを求める
+	//
+	double rho, theta;
+	bool success = get_rho_theta( birdPoints, &rho, &theta);
+		
+	//
+	// 実空間上のrhoとthetaを求める
+	//
+	double gl_rho;
+	if( success )
+		real_world_value(rho, theta, &gl_rho, gl_theta, dist);
+	
 	//
 	// 校正画像作成
 	//
@@ -251,44 +272,20 @@ int OillineDetector2::Execute(Mat &src, double *dist, double *gl_theta, Mat &res
 	Mat bird_img;
 	make_birdimg(calib_img, bird_img);
 
-
-	// ２点抽出できていなければ失敗
-	if (max_curves.size() != 2)
-	{
-		stackImages(src_clone);
-		result_img = stackImages(bird_img);
-		return 0;
-	}
-
 	//
-	// 俯瞰画像の座標に変換
-	//
-	vector<Point2d> birdPoints = to_bird_coordinate(max_curves);
-
-	//
-	// 俯瞰画像のrhoとシータを求める
-	//
-	double rho, theta;
-	get_rho_theta(birdPoints[0], birdPoints[1], &rho, &theta);
-
-	//
-	// 実空間上のrhoとthetaを求める
-	//
-	double gl_rho;
-	real_world_value(rho, theta, &gl_rho, gl_theta, dist);
-	
-
 	// 俯瞰画像に結果描画
+	//
 	vector<Vec2f> ln;
 	ln.push_back(Vec2f(rho, theta));
-	bird_img = draw_lines(bird_img, ln, result_color);
+	if( success )
+		bird_img = draw_lines(bird_img, ln, result_color);
 
+	//
 	// 結果画像作成
+	//
 	stackImages(src_clone);
 	result_img = stackImages(bird_img);
 	
-	if( acceptable_move == 0 )
-		return 0;
 
 	// 成功終了
 	return 1;
@@ -394,25 +391,52 @@ vector<Point2d> OillineDetector2::to_bird_coordinate(vector<Point2d> &points)
 //
 // 画像上の直線のrho(>0)とtheta(0-2PI)を求める
 //
-void OillineDetector2::get_rho_theta(Point2d p1, Point2d p2, double *rho, double *theta)
+bool OillineDetector2::get_rho_theta( vector<Point2d> &pnts, double* rho, double* theta )
 {
-	// ax+by = c , a^2+b^2 = 1;
-	double a, b, c;
-	a = (p2.y - p1.y);
-	b = (p1.x - p2.x);
-	c = sqrt(a*a + b*b);
-	a /= c;
-	b /= c;
-	c = ((p2.y - p1.y)*p1.x + (p1.x - p2.x)*p1.y) / c;
-
+	// 点の数は２個以上
+	const int cnt = pnts.size();
+	if( cnt <= 1 ) return false;
+		
+	// 重心を求める
+	double cx = 0.0, cy = 0.0;
+	for( int i=0; i<cnt; i++ ){
+		cx += pnts[i].x;
+		cy += pnts[i].y;
+	}
+	cx /= cnt;
+	cy /= cnt;
+	
+	// 固有値問題を作成
+	double x2=0.0, y2=0.0, xy=0.0;
+	for( int i=0; i<cnt; i++ ){
+		x2 += (pnts[i].x-cx)*(pnts[i].x-cx);
+		y2 += (pnts[i].y-cy)*(pnts[i].y-cy);
+		xy += (pnts[i].x-cx)*(pnts[i].y-cy);
+	}
+	Mat mat = (Mat_<double>(2,2) << x2, xy, xy, y2);
+	
+	// 固有値問題を解く
+	Mat eigenVal, eigenVec;
+	eigen( mat, eigenVal, eigenVec);
+	
+	// 直線の方程式を求める
+	// ax + by = c,  a^2 + b^2 = 1, c>=0
+	double a = eigenVec.at<double>(0,1);
+	double b = -eigenVec.at<double>(0,0);
+	double a2_b2 = sqrt(a*a + b*b);
+	a /= a2_b2;
+	b /= a2_b2;
+	double c = a*cx + b*cy;	
 	if (c < 0){
 		a = -a;
 		b = -b;
 		c = -c;
 	}
 
+	// 終了
 	*rho = c;
 	*theta = atan2(b, a);
+	return true;
 }
 
 //
@@ -875,24 +899,46 @@ Mat OillineDetector2::draw_lines(Mat img, vector<Vec2f> lines, Scalar color, int
 //
 // エッジ点が許容範囲内で動いたかチェック
 //
-int OillineDetector2::is_acceptable_movement( vector<Point2d> &prePnts, vector<Point2d> &latPnts, double threshold ){
+int OillineDetector2::is_acceptable_movement( vector<Point2d> &pnts1, vector<Point2d> &pnts2, double threshold ){
 
-	assert( prePnts.size()==2 && latPnts.size()==2);
-
-	// まだ前回の点が検出されていなければ、とりあえず許容内とみなす
-	if( prePnts[0].x < 0 ) return 1;
-
-	// 距離を比べる
-	double d;
-	for( int i=0; i<2; i++ ){
-		d = (prePnts[i].x-latPnts[i].x)*(prePnts[i].x-latPnts[i].x)
-			 + (prePnts[i].y-latPnts[i].y)*(prePnts[i].y-latPnts[i].y);
-
-		if( d >= threshold * threshold ){
-			return 0;
-		}
+	// 数の少ない点と多い点で処理する
+	vector<Point2d> fewrPnts, morePnts;
+	if( pnts1.size() < pnts2.size() ){
+		fewrPnts = pnts1;
+		morePnts = pnts2;
+	}
+	else{
+		fewrPnts = pnts2;
+		morePnts = pnts1;
 	}
 
+	// 検出点が0個か1個であれば許容外
+	int fewrCnt = fewrPnts.size();
+	int moreCnt = morePnts.size();
+	if( fewrCnt == 0 || fewrCnt == 1) return 0;
+	if( moreCnt == 0 || moreCnt == 1) return 0;
+
+	// 点数の少ない方を中心に距離を比べる
+	for( int i=0; i<fewrCnt; i++ ){
+		
+		// 点 i に近い点 j があるか調べる
+		bool has_next = false;
+		for( int j=0; j<moreCnt; j++ ){
+			double dx = fewrPnts[i].x - morePnts[j].x;
+			double dy = fewrPnts[i].y - morePnts[j].y;
+			double d2 = dx*dx + dy*dy;
+
+			// 近場の点jが見つかれば
+			if( d2 < threshold * threshold ){
+				has_next = true;
+				break;
+			}
+		}
+		
+		// 点iに近い点がなければ許容外
+		if( !has_next )
+			return 0;
+	}
 
 	// 許容内
 	return 1;

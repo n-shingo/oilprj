@@ -22,6 +22,10 @@ public:
 	/////////////////
 	// プロパティ   //
 	/////////////////
+	
+	void SetSlitCount( int cnt ){ _slitCnt = cnt; }
+	int GetSlitCount( void ){ return _slitCnt; }
+
 
 	// 俯瞰画像のプロパティ
 	void SetCamTopForBird(int top){ _camTop = top; set_coeffs(); }  // 俯瞰前の画像の俯瞰画像上部y座標
@@ -33,21 +37,6 @@ public:
 	void SetDppX(double dpp_x){ _dpp_x = dpp_x; } // DppX(x軸方向の距離変換係数[mm/pix])を設定
 	void SetDppY(double dpp_y){ _dpp_y = dpp_y; } // DppY(y軸方向の距離変換係数[mm/pix])を設定
 
-	// ガンマ補正 プロパティ
-	void SetGammaBase( double base ){ _gamma_base = base; }
-	double GetGammaBase( void ){ return _gamma_base; }
-	void SetGammaScale( double scale ){ _gamma_scale = scale; }
-	double GetGammaScale( void ){ return _gamma_scale; }
-	
-	// Gaussianフィルタ プロパティ
-	void SetGaussianWindow(int win){ _gaussian_window = win; }
-	int GetGaussianWindow(void){ return _gaussian_window; }
-	void SetGaussianSigma(double sigma){ _gaussian_sigma = sigma; }
-	double GetGaussianSigma(void){ return _gaussian_sigma; }
-
-	// エッジ点とみなす最大移動量
-	void SetAcceptableMaxMovement( double movement ){ _acceptable_max_movement = movement; }
-	double GetAcceptableMaxMovement( void ){ return _acceptable_max_movement; }
 
 private:
 	////////////////////
@@ -56,7 +45,7 @@ private:
 
 	// 必要な係数などを設定する
 	void set_coeffs();
-
+	
 	// カメラ画像の歪み補正をする(0:失敗、1:成功)
 	void cameara_calibrate(Mat& src, Mat& dst);
 
@@ -67,7 +56,7 @@ private:
 	vector<Point2d> to_bird_coordinate(vector<Point2d> &points);
 	
 	// 画像上の直線のrho(>0)とtheta(0-2PI)を求める
-	void get_rho_theta(Point2d p1, Point2d p2, double *rho, double *theta);
+	bool get_rho_theta( vector<Point2d> &pnts, double* rho, double* theta );
 
 	// 画像上の線から、実空間上での線の値と距離を求める
 	// rho, theta :画像上の線,  rho_gl, theta_gl: 実空間上の線(結果), dist:距離(結果)
@@ -113,7 +102,7 @@ private:
 	Mat draw_lines(Mat img, vector<Vec2f> lines, Scalar color, int thickness = 1);
 
 	// エッジ点が許容範囲内で動いたかチェック
-	int is_acceptable_movement( vector<Point2d> &prePnts, vector<Point2d> &latPnts, double threshold );
+	int is_acceptable_movement( vector<Point2d> &pnts1, vector<Point2d> &pnts2, double threshold );
 
 
 
@@ -121,8 +110,12 @@ private:
 	//   メンバ変数    //
 	////////////////////
 	
-	// 最後に検出されたエッジ2点;
+	// スリット数
+	int _slitCnt;
+		
+	// 最後に検出された点
 	vector<Point2d> _last_points;
+
 
 	// カメラ校正パラメータ
 	Mat _calibIntrinsic;
@@ -165,9 +158,6 @@ private:
 
 	// 二値化
 	int _binarize_size;  // 二値化を適用するサイズ[pix]
-
-	// エッジ点が移動したとみなす最大移動量[pix]
-	double _acceptable_max_movement;
 
 	// 曲率
 	int _curve_interval; // 曲率のためのインターバル
