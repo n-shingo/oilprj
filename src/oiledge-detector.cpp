@@ -41,11 +41,12 @@ int main(int argc, char ** argv)
     // ---> DECLARATION
     //==========================================================
     int ssm_id = 0;
+	int max_slit_count = 2;
 	bool result_view = false;
 	bool debug_view = false;
 
 	// キャプチャ用フレーム画像と結果画像
-	Mat frm, resImg;
+	Mat frm, res_img;
 
 	// 画像から道エッジ取得クラス
 	OillineDetector2 det;
@@ -68,7 +69,7 @@ int main(int argc, char ** argv)
     //--------------------------------------
     // オプション解析
     int c;
-    while( (c = getopt(argc, argv, "nvdh:")) != -1 )
+    while( (c = getopt(argc, argv, "n:s:vdh")) != -1 )
     {
         switch ( c )
         {
@@ -76,6 +77,9 @@ int main(int argc, char ** argv)
             fprintf( stderr, "input ssm id = %d\n", atoi(optarg) );
             ssm_id = atoi(optarg);
             break;
+		case 's':
+			max_slit_count = atoi(optarg);
+			break;
 		case 'v':
 			result_view = true;
 			break;
@@ -88,6 +92,9 @@ int main(int argc, char ** argv)
 			exit(0);
         }
     }
+	
+	// 最大検出数の設定
+	det.SetMaxSlitCount( max_slit_count );
 
 
 	// ssm関連の初期化
@@ -134,7 +141,7 @@ int main(int argc, char ** argv)
 			// エッジの位置と向きを計算
 			OilEdgePos ep;
 			double dist;
-			ep.status = det.Execute(frm, &dist, &ep.theta, resImg, debug_view);
+			ep.status = det.Execute(frm, &dist, &ep.theta, res_img, debug_view);
 			ep.dist = (int)dist;
 
 			// SSMにEdgePos書き込み
@@ -143,7 +150,7 @@ int main(int argc, char ** argv)
 
 			// -vオプションであれば画像表示
 			if( result_view || debug_view ){
-				imshow( "edge-detector result", resImg); // 結果画像
+				imshow( "edge-detector result", res_img); // 結果画像
 			}
 
 		}
@@ -180,7 +187,7 @@ void showHelp(void){
 	// 書式
 	fprintf( stdout, "\n\n" );
 	fprintf( stdout, "\033[1m書式\033[0m\n" );
-	fprintf( stdout, "\t\033[1moiledge-detector\033[0m [-n ssmID] [-v] [-d]\n" );
+	fprintf( stdout, "\t\033[1moiledge-detector\033[0m [-n ssmID] [-s slit_count] [-v] [-d]\n" );
 	fprintf( stdout, "\t\033[1moiledge-detector\033[0m [-h]\n" );
 	fprintf( stdout, "\n" );
 
@@ -188,6 +195,7 @@ void showHelp(void){
 	fprintf( stdout, "\n" );
 	fprintf( stdout, "\033[1m説明\033[0m\n" );
 	fprintf( stdout, "\t\033[1m-n\033[0m\tSSMのIDを指定する\n" );
+	fprintf( stdout, "\t\033[1m-s\033[0m\t検出するスリットの数を指定する. 初期値は2.\n" );
 	fprintf( stdout, "\t\033[1m-v\033[0m\t画像処理結果を表示する\n" );
 	fprintf( stdout, "\t\033[1m-d\033[0m\tデバッグ用画像処理結果を表示する\n" );
 	fprintf( stdout, "\t\033[1m-h\033[0m\tこのヘルプを表示する\n" );
