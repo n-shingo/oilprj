@@ -10,12 +10,13 @@
 #include "opencv2/opencv.hpp"
 #include <ssm.hpp>
 #include <kaw_lib/SSM-Image.hpp>
-#include "OillineDetector.h"
+#include "OillineDetector2.h"
 #include "oilEdgePosSsm.h"
 #include "sys/time.h"
 
 using namespace std;
 using namespace cv;
+using namespace sn;
 
 bool gShutOff;
 
@@ -29,19 +30,25 @@ void ctrlC(int aStatus)
 // Ctrl-C による正常終了を設定
 inline void setSigInt(){ signal(SIGINT, ctrlC); }
 
+
+// ヘルプを表示関数
+void showHelp(void);
+
+
 int main(int argc, char ** argv)
 {
     //==========================================================
     // ---> DECLARATION
     //==========================================================
     int ssm_id = 0;
-	int result_view = 0;
+	bool result_view = false;
+	bool debug_view = false;
 
 	// キャプチャ用フレーム画像と結果画像
 	Mat frm, resImg;
 
 	// 画像から道エッジ取得クラス
-	OillineDetector det;
+	OillineDetector2 det;
 
 	////////////////////////////////////
     // 以下の値を実験で求め直すこと！ //
@@ -61,7 +68,7 @@ int main(int argc, char ** argv)
     //--------------------------------------
     // オプション解析
     int c;
-    while( (c = getopt(argc, argv, "hvn:")) != -1 )
+    while( (c = getopt(argc, argv, "nvdh:")) != -1 )
     {
         switch ( c )
         {
@@ -70,13 +77,14 @@ int main(int argc, char ** argv)
             ssm_id = atoi(optarg);
             break;
 		case 'v':
-			result_view = 1;
+			result_view = true;
+			break;
+		case 'd':
+			debug_view = true;
 			break;
         case 'h':
 		default:
-            fprintf( stdout, "ヘルプ\n" );
-            fprintf( stdout, "\t-n  NUMBER : set sensor ID number\n" );
-            fprintf( stdout, "\t-v         : 画像処理結果を表示する\n\n" );
+			showHelp();
 			exit(0);
         }
     }
@@ -126,7 +134,7 @@ int main(int argc, char ** argv)
 			// エッジの位置と向きを計算
 			OilEdgePos ep;
 			double dist;
-			ep.status = det.Execute(frm, &dist, &ep.theta, resImg);
+			ep.status = det.Execute(frm, &dist, &ep.theta, resImg, debug_view);
 			ep.dist = (int)dist;
 
 			// SSMにEdgePos書き込み
@@ -134,8 +142,8 @@ int main(int argc, char ** argv)
 			oilEdgePosSsm.write(cam_image.time);
 
 			// -vオプションであれば画像表示
-			if( result_view ){
-				imshow( "Result", resImg); // 結果画像
+			if( result_view || debug_view ){
+				imshow( "edge-detector result", resImg); // 結果画像
 			}
 
 		}
@@ -165,4 +173,24 @@ int main(int argc, char ** argv)
 
     cout << "End Successfully" << endl;
     return 0;
+}
+
+void showHelp(void){
+
+	// 書式
+	fprintf( stdout, "\n\n" );
+	fprintf( stdout, "\033[1m書式\033[0m\n" );
+	fprintf( stdout, "\t\033[1moiledge-detector\033[0m [-n ssmID] [-v] [-d]\n" );
+	fprintf( stdout, "\t\033[1moiledge-detector\033[0m [-h]\n" );
+	fprintf( stdout, "\n" );
+
+	// 説明
+	fprintf( stdout, "\n" );
+	fprintf( stdout, "\033[1m説明\033[0m\n" );
+	fprintf( stdout, "\t\033[1m-n\033[0m\tSSMのIDを指定する\n" );
+	fprintf( stdout, "\t\033[1m-v\033[0m\t画像処理結果を表示する\n" );
+	fprintf( stdout, "\t\033[1m-d\033[0m\tデバッグ用画像処理結果を表示する\n" );
+	fprintf( stdout, "\t\033[1m-h\033[0m\tこのヘルプを表示する\n" );
+	fprintf( stdout, "\n" );
+
 }

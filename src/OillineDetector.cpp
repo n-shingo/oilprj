@@ -139,7 +139,6 @@ int OillineDetector::Execute(Mat &src, double *dist, double *gl_theta, Mat &resu
 		stackImages(src);
 		result_img = stackImages(thresh_img);
 		return 0;
-
 	}
 
 
@@ -165,6 +164,7 @@ int OillineDetector::Execute(Mat &src, double *dist, double *gl_theta, Mat &resu
 	// 細線化されたデータをグループ化する
 	//
 	fusion_thining_images( region_images, region_rects, lines );
+
 
 	//
 	// 曲率を求める

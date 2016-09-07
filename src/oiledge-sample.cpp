@@ -8,10 +8,11 @@
 
 using namespace std;
 using namespace cv;
+using namespace sn;
 
 int main( int argc, char **argv )
 {
-	long frameNum = 1200;
+	long frameNum = 300;
 
 	char dirname[256];
 	char basename[16] = "image";
@@ -19,7 +20,7 @@ int main( int argc, char **argv )
 
 	// オプション解析
 	if( argc != 2 ){
-		cout << "oiledge-debug [dirname]" << endl;
+		cout << "oiledge-sample [dirname]" << endl;
 		exit(1);
 	}
 
@@ -32,6 +33,7 @@ int main( int argc, char **argv )
 	
 	OillineDetector det;
 	OillineDetector2 det2;
+	det2.SetMaxSlitCount( 4 );
 	////////////////////////////////////
     // 以下の値を実験で求め直すこと！ //
 	////////////////////////////////////
@@ -41,14 +43,13 @@ int main( int argc, char **argv )
     det.SetDgl( 260 );   // D_gl(車軸とカメラ画像最下部までの距離[mm])を設定
     det.SetDppX( 2.521 ); // DppX(x軸方向の距離変換係数[mm/pix])を設定
     det.SetDppY( 2.238 ); // DppY(y軸方向の距離変換係数[mm/pix])を設定
-    
+
     det2.SetCamTopForBird( 0 );  // 俯瞰画像上部に対応する前画像のy座標
     det2.SetBirdHeight( 480 );  // 俯瞰画像の高さ[pix]
     det2.SetBirdBtmX( 215, 425 );  // 俯瞰画像下部の左右x座標
     det2.SetDgl( 260 );   // D_gl(車軸とカメラ画像最下部までの距離[mm])を設定
     det2.SetDppX( 2.521 ); // DppX(x軸方向の距離変換係数[mm/pix])を設定
     det2.SetDppY( 2.238 ); // DppY(y軸方向の距離変換係数[mm/pix])を設定
-	det2.SetSlitCount( 4 );
 
 
 	double dist, theta;
@@ -68,14 +69,14 @@ int main( int argc, char **argv )
 			continue;
 		}
 
-		timerStart();
-		det.Execute(img, &dist, &theta, result);
-		cout << timerTime() << "sec" << endl;
-		imshow( "result", result );
+		//timerStart();
+		//det.Execute( img, &dist, &theta, result );
+		//cout << "process time 1: " << timerTime() << " [sec]" << endl;
+		//imshow( "result", result);
 
 		timerStart();
-		det2.Execute( img, &dist, &theta, result2 );
-		cout << timerTime() << "sec" << endl;
+		det2.Execute( img, &dist, &theta, result2, true );
+		cout << "process time 2: " << timerTime() << " [sec]" << endl;
 		imshow( "result2", result2);
 
 		while(1){

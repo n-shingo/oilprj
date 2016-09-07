@@ -19,7 +19,7 @@ message(STATUS "CMAKE_CXX_FLAGS_RELEASE: ${CMAKE_CXX_FLAGS_RELEASE}")
 find_package(PkgConfig)
 pkg_check_modules(OPENCV REQUIRED opencv)
 
-add_executable(oiledge-detector ./src/oiledge-detector.cpp ./src/OillineDetector.cpp ./src/tool.cpp)
+add_executable(oiledge-detector ./src/oiledge-detector.cpp ./src/OillineDetector.cpp ./src/OillineDetector2.cpp ./src/tool.cpp)
 target_link_libraries(oiledge-detector ssm /usr/local/lib/kaw_lib.a ${OPENCV_LIBRARIES})
 
 add_executable(oiledge-viewer ./src/oiledge-viewer.cpp) 

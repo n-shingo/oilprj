@@ -27,8 +27,8 @@ Mat stackImages(Mat &img)
 	}
 
 	// 24bitのimgW x imgHの画像に変換
-	Mat resize_img = Mat::ones(imgH, imgW, img.type());
-	resize(img, resize_img, resize_img.size(), cv::INTER_CUBIC);
+	Mat resize_img = Mat(imgH, imgW, img.type());
+	resize(img, resize_img, resize_img.size(), cv::INTER_NEAREST);
 	Mat img24;
 	if (resize_img.channels() == 1)
 		cvtColor(resize_img, img24, CV_GRAY2BGR);
