@@ -21,6 +21,9 @@ OillineDetector2::OillineDetector2(){
 	// 最後に検出された線
 	_last_line = Vec2d( -1.0, -1.0 );
 
+	// 最後に検出された溶接幅
+	_last_weld_width = -1.0;
+
 	// ガンマ補正
 	_gamma_base = 60;
 	_gamma_scale = 0.3;
@@ -52,7 +55,7 @@ OillineDetector2::OillineDetector2(){
 
 	// 曲率
 	_curve_interval = 15; // 曲率のためのインターバル
-	_th_curve_max = 0.30; // 溶接溝における曲率の最低値
+	_th_curve_max = 0.25; // 溶接溝における曲率の最低値
 	
 	// 前回線との変化許容閾値
 	_th_rho_mm = 100.0;
@@ -215,22 +218,26 @@ int OillineDetector2::Execute(Mat &src, double *dist, double *gl_theta, Mat &res
 	}
 	
 	//
-	// 最大曲率を求める
+	// 最大&最小曲率を求める
 	//
 	vector<int> curve_max_indexes;
+	vector<int> curve_min_indexes;
 	for( int i=0; i<curves.size(); i++ ){
-		int max = 0;
+		int max = 0, min=0;
 		for( int j=0; j<curves[i].size(); j++ ){
 			if(curves[i][j] > curves[i][max])
 				max = j;
+			if(curves[i][j] < curves[i][min])
+				min = j;
 		}
 		curve_max_indexes.push_back(max);
+		curve_min_indexes.push_back(min);
 	}
 
 	//
-	// 最大曲率位置(=エッジ点)を求める
+	// 最大曲率位置(=上向きエッジ点)を求める
 	//
-	vector<Point2d> edge_points;
+	vector<Point2d> up_edge_points;
 	for( int i=0; i<curve_max_indexes.size(); i++ )
 	{
 		double curvature = curves[i][curve_max_indexes[i]];
@@ -238,23 +245,39 @@ int OillineDetector2::Execute(Mat &src, double *dist, double *gl_theta, Mat &res
 			double x = (double)(chains[i][0].x + curve_max_indexes[i]);
 			double y = intplChains[i][curve_max_indexes[i]];
 			Point2d p(x,y);
-			edge_points.push_back(p);
+			up_edge_points.push_back(p);
+		}
+	}
+
+	//
+	// 最小曲率位置(=下向きエッジ点)を求める
+	//
+	vector<Point2d> down_edge_points;
+	for( int i=0; i<curve_min_indexes.size(); i++ )
+	{
+		double curvature = curves[i][curve_min_indexes[i]];
+		if( fabs(curvature) > _th_curve_max ){
+			double x = (double)(chains[i][0].x + curve_min_indexes[i]);
+			double y = intplChains[i][curve_min_indexes[i]];
+			Point2d p(x,y);
+			down_edge_points.push_back(p);
 		}
 	}
 
 	//
 	// 俯瞰画像の座標に変換
 	//
-	vector<Point2d> bird_points = to_bird_coordinate(edge_points);
+	vector<Point2d> up_bird_points = to_bird_coordinate(up_edge_points);
+	vector<Point2d> down_bird_points = to_bird_coordinate(down_edge_points);
 
 	
 	//
-	// 俯瞰画像のrhoとシータを求める
+	// 俯瞰画像上の直線(rhoとtheta)を求める
 	//
 	double rho, theta;
-	bool success_line = get_rho_theta( bird_points, &rho, &theta);
+	bool success_line = get_rho_theta( down_bird_points, &rho, &theta);
 
-		
+
 	//
 	// 実空間上のrhoとthetaを求める
 	//
@@ -292,10 +315,17 @@ int OillineDetector2::Execute(Mat &src, double *dist, double *gl_theta, Mat &res
 		bird_img = draw_lines(bird_img, ln, result_color);
 
 	// 検出エッジ点描画
-	for( int i=0; i<bird_points.size(); i++ ){
-		int x = cvRound( bird_points[i].x );
-		int y = cvRound( bird_points[i].y );
+	for( int i=0; i<down_bird_points.size(); i++ ){
+		int x = cvRound( down_bird_points[i].x );
+		int y = cvRound( down_bird_points[i].y );
 		circle( bird_img, Point(x,y), 5, result_color );
+	}
+
+	// 検出エッジ点描画(補助側)
+	for( int i=0; i<up_bird_points.size(); i++ ){
+		int x = cvRound( up_bird_points[i].x );
+		int y = cvRound( up_bird_points[i].y );
+		circle( bird_img, Point(x,y), 3, result_color );
 	}
 
 
@@ -315,6 +345,14 @@ int OillineDetector2::Execute(Mat &src, double *dist, double *gl_theta, Mat &res
 	}
 	result_img = stackImages(bird_img);
 
+
+	//
+	// 実空間上で直線と点との平均距離(溶接幅)を算出する(チェック用)
+	//
+	if( success_line && up_bird_points.size() > 0 )
+		_last_weld_width = average_distance_points_and_line( rho, theta, up_bird_points );
+	else
+		_last_weld_width = -1.0;
 
 	//
 	// 終了
@@ -1014,4 +1052,43 @@ Mat OillineDetector2::draw_lines(Mat img, vector<Vec2d> lines, Scalar color, int
 }
 
 
+//
+// 俯瞰画像上の線と点[pixel]の実空間上の距離[mm]を算出する
+//
+double OillineDetector2::average_distance_points_and_line( double rho, double theta, vector<Point2d> &points )
+{
+	assert( points.size() > 0 );
 
+	// 俯瞰画像上での直線式を求める
+	// ax + by = c, a^2+b^2 = 1
+	double a = cos(theta);
+	double b = sin(theta);
+	double c = rho;
+
+	// 直線を通る2点の座標を求める
+	Point2d p1( a*c, b*c );
+	Point2d p2( p1.x - 10.0*b, p1.y + 10.0*a );
+
+	// 原点そのままで、実空間座標に変換
+	p1.x *= _dpp_x; p1.y *= _dpp_y;
+	p2.x *= _dpp_x; p2.y *= _dpp_y;
+
+	// 実空間上での直線式を求める
+	double dx = p1.x - p2.x;
+	double dy = p1.y - p2.y;
+	a = dy, b = -dx, c = dy*p1.x - dx*p1.y;
+
+	// 実空間上での直線までの距離の合計を求める
+	double sum_d = 0.0;
+	for( int i=0; i<points.size(); i++ )
+	{
+		double d = fabs(a*points[i].x*_dpp_x + b*points[i].y*_dpp_y - c)/sqrt(a*a+b*b);
+		sum_d += d;
+	}
+
+
+	// 平均距離を返す
+	return sum_d / points.size();
+
+
+}

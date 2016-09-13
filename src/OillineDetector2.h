@@ -31,6 +31,9 @@ namespace sn{
 		void SetMaxSlitCount( int cnt ){ _max_slit_cnt= cnt; }
 		int GetMaxSlitCount( void ){ return _max_slit_cnt; }
 
+		// 最後に検出された溶接幅
+		double GetWeldWidthMM( void ){ return _last_weld_width; }
+
 
 		// 俯瞰画像のプロパティ
 		void SetCamTopForBird(int top){ _camTop = top; set_coeffs(); }  // 俯瞰前の画像の俯瞰画像上部y座標
@@ -110,6 +113,9 @@ namespace sn{
 		Mat draw_lines(Mat img, vector<Vec2d> lines, Scalar color, int thickness = 1);
 
 
+		// 俯瞰画像上の線と点[pixe]の実空間上の距離を算出する
+		// rho,theta :俯瞰画像上の線, points:俯瞰画像上の点群
+		double average_distance_points_and_line( double rho, double theta, vector<Point2d> &points );
 
 
 		////////////////////
@@ -130,6 +136,9 @@ namespace sn{
 			
 		// 最後に検出された線
 		Vec2d _last_line;
+
+		// 最後に検出された溶接幅
+		double _last_weld_width;
 
 		// ガンマ補正
 		double _gamma_base; // ガンマ補正基準値

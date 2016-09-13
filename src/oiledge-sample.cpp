@@ -12,7 +12,7 @@ using namespace sn;
 
 int main( int argc, char **argv )
 {
-	long frameNum = 300;
+	long frameNum = 0;
 
 	char dirname[256];
 	char basename[16] = "image";
@@ -74,10 +74,15 @@ int main( int argc, char **argv )
 		//cout << "process time 1: " << timerTime() << " [sec]" << endl;
 		//imshow( "result", result);
 
+		// 処理実行
 		timerStart();
 		det2.Execute( img, &dist, &theta, result2, true );
 		cout << "process time 2: " << timerTime() << " [sec]" << endl;
 		imshow( "result2", result2);
+
+		// 溶接幅の表示
+		double weld_width = det2.GetWeldWidthMM();
+		cout << "溶接幅[mm]: " << weld_width << endl;
 
 		while(1){
 			key = waitKey(1);

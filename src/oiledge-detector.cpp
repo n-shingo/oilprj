@@ -44,6 +44,7 @@ int main(int argc, char ** argv)
 	int max_slit_count = 2;
 	bool result_view = false;
 	bool debug_view = false;
+	bool show_weld_width = false;
 
 	// キャプチャ用フレーム画像と結果画像
 	Mat frm, res_img;
@@ -69,7 +70,7 @@ int main(int argc, char ** argv)
     //--------------------------------------
     // オプション解析
     int c;
-    while( (c = getopt(argc, argv, "n:s:vdh")) != -1 )
+    while( (c = getopt(argc, argv, "n:s:vdwh")) != -1 )
     {
         switch ( c )
         {
@@ -85,6 +86,9 @@ int main(int argc, char ** argv)
 			break;
 		case 'd':
 			debug_view = true;
+			break;
+		case 'w':
+			show_weld_width = true;
 			break;
         case 'h':
 		default:
@@ -153,6 +157,10 @@ int main(int argc, char ** argv)
 				imshow( "edge-detector result", res_img); // 結果画像
 			}
 
+			// -wオプションがあれば溶接幅表示
+			if( show_weld_width )
+				cout << "溶接幅[mm]: " << det.GetWeldWidthMM() << endl;
+
 		}
 
         usleep(25000);
@@ -187,7 +195,7 @@ void showHelp(void){
 	// 書式
 	fprintf( stdout, "\n\n" );
 	fprintf( stdout, "\033[1m書式\033[0m\n" );
-	fprintf( stdout, "\t\033[1moiledge-detector\033[0m [-n ssmID] [-s slit_count] [-v] [-d]\n" );
+	fprintf( stdout, "\t\033[1moiledge-detector\033[0m [-n ssmID] [-s slit_count] [-v] [-d] [-w]\n" );
 	fprintf( stdout, "\t\033[1moiledge-detector\033[0m [-h]\n" );
 	fprintf( stdout, "\n" );
 
@@ -198,6 +206,7 @@ void showHelp(void){
 	fprintf( stdout, "\t\033[1m-s\033[0m\t検出するスリットの数を指定する. 初期値は2.\n" );
 	fprintf( stdout, "\t\033[1m-v\033[0m\t画像処理結果を表示する\n" );
 	fprintf( stdout, "\t\033[1m-d\033[0m\tデバッグ用画像処理結果を表示する\n" );
+	fprintf( stdout, "\t\033[1m-w\033[0m\t溶接幅をコンソールに表示する\n" );
 	fprintf( stdout, "\t\033[1m-h\033[0m\tこのヘルプを表示する\n" );
 	fprintf( stdout, "\n" );
 
