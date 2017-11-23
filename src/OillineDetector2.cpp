@@ -1,4 +1,5 @@
 #include <sys/time.h>
+#include <list>
 #include "opencv2/opencv.hpp"
 #include "OillineDetector2.h"
 #include "tool.h"
@@ -109,6 +110,18 @@ OillineDetector2::OillineDetector2(){
 	_d_gl = 2250;     // 車軸とカメラ画像最下部までの距離[mm]
 	_dpp_x = 13.85;   // x軸方向の距離変換係数[mm/pix]
 	_dpp_y = 13.33;   // y軸方向の距離変換係数[mm/pix]
+	
+
+	////////////////////
+	// サイド段差検出  //
+	////////////////////
+	
+	// 検出対象エリア[pix]
+	_stepL[0] = 80;
+	_stepL[1] = 200;
+	_stepR[0] = 440;
+	_stepR[1] = 560;
+
 }
 
 //
@@ -206,7 +219,11 @@ int OillineDetector2::Execute(Mat &src, double *dist, double *gl_theta, Mat &res
 		smoothChains.push_back(chain);
 	}
 	
-	
+	// 両サイドに段差があるか調べる
+	Mat step_img = Mat::zeros( _camH, _camW, CV_8UC3);
+	is_sidestep( chains, smoothChains, true, step_img);
+	is_sidestep( chains, smoothChains, false, step_img);
+	imshow( "step", step_img );
 
 	//
 	// 曲率を計算
@@ -327,6 +344,13 @@ int OillineDetector2::Execute(Mat &src, double *dist, double *gl_theta, Mat &res
 		int y = cvRound( up_bird_points[i].y );
 		circle( bird_img, Point(x,y), 3, result_color );
 	}
+	
+	//
+	//  サイドステップ画像
+	//
+	rectangle( src, Point(0,0), Point(_stepL[0], _camH), Scalar(0,0,0),-1, 1);
+	rectangle( src, Point(_stepL[1],0), Point(_stepR[0], _camH), Scalar(0,0,0),-1, 1);
+	rectangle( src, Point(_stepR[1],0), Point(_camW, _camH), Scalar(0,0,0),-1, 1);
 
 
 	//
@@ -1092,3 +1116,148 @@ double OillineDetector2::average_distance_points_and_line( double rho, double th
 
 
 }
+
+//
+// サイドの段差を検出する関数
+// 段差なし:0, 段差あり1
+//
+int OillineDetector2::is_sidestep( vector <vector<Point> > &p_chains, vector< vector<double> > &d_chains, bool left, Mat &img )
+{
+	double enough_data_ratio = 0.7;
+	int enough_cnt = 3;
+	int move_th = 5;
+	
+	// これまでのデータを蓄積しておくLIST
+	static list<double> list_UL, list_DL, list_UR, list_DR;
+	list<double> *list_up = left ? &list_UL : &list_UR;
+	list<double> *list_dn = left ? &list_DL : &list_DR;
+	
+	cout << list_up->size() << endl;
+	
+	// サイズチェック
+	if( p_chains.size() != d_chains.size() ){
+		cout << "p_chains と d_chains のサイズが異なります" << endl;
+		throw;
+	}
+	
+	// iPoint範囲データに変更
+	vector< vector< iPoint > > chains;
+	int *step = left ? _stepL : _stepR;
+	
+	for( int i=0; i<p_chains.size(); i++ )
+	{
+		vector< iPoint > chain;
+		for( int j=0; j<d_chains[i].size(); j++ ){
+			iPoint p;
+			p.x = p_chains[i][0].x + j;
+			p.y = d_chains[i][j];
+			
+			if( step[0] <= p.x && p.x < step[1] )
+				chain.push_back(p);
+		}
+		if( chain.size() > 0 )
+			chains.push_back(chain);
+	}
+	
+	if( chains.size() < 2 ){
+		list_up->clear();
+		list_dn->clear();
+		return 0;
+	}
+	
+	// 上下チェーンの選出
+	int up_index = 0;
+	int dn_index = 0;
+	for( int i=1; i<chains.size(); i++ ){
+		if( chains[i][0].y < chains[up_index][0].y ) up_index = i;
+		if( chains[i][0].y > chains[dn_index][0].y ) dn_index = i;
+	}
+	if( up_index == dn_index ){
+		list_up->clear();
+		list_dn->clear();
+		return 0;
+	}
+	vector< iPoint > chain_up = chains[up_index];
+	vector< iPoint > chain_dn = chains[dn_index];
+
+	// 上下チェーン描画
+	draw_ipoint_chain( img, chain_up, Scalar(0,255,0) );
+	draw_ipoint_chain( img, chain_dn, Scalar(0,255,0) );
+
+	// 十分なデータ量かチェック
+	double enough_size = enough_data_ratio *(step[1]-step[0] );
+	if( enough_size > chain_up.size() || enough_size > chain_dn.size() ){
+		list_up->clear();
+		list_dn->clear();
+		return 0;
+	}
+	
+	// 平均を計算
+	double ave_up=0.0, ave_dn=0.0;
+	for( int i=0; i<chain_up.size(); i++ )
+		ave_up += chain_up[i].y;
+	ave_up /= chain_up.size();
+	list_up->push_back(ave_up);
+	
+	for( int i=0; i<chain_dn.size(); i++ )
+		ave_dn += chain_dn[i].y;
+	ave_dn /= chain_dn.size();
+	list_dn->push_back(ave_dn);
+	
+	
+	// 十分なデータ数かチェック
+	if( list_up->size() < enough_cnt )
+		return 0;
+	
+	
+	// 動いているかチェック
+	double dif_up = list_up->front() - ave_up;
+	double dif_dn = list_dn->front() - ave_dn;
+	bool is_move_dn = fabs( dif_dn ) > move_th;
+	bool is_step = false;
+	if( is_move_dn ){
+		if( fabs(dif_up-dif_dn) > move_th )
+			is_step = true;
+	}
+	
+	// 過去データ破棄
+	list_up->pop_front();
+	list_dn->pop_front();
+	
+
+	// 段差であれば赤く上書き描画
+	if( is_step )
+		draw_ipoint_chain( img, chain_dn, Scalar(0,0,255) );
+
+	// 終了
+	if( is_step )
+		return 1;
+	else
+		return 0;
+}
+
+//
+// iPointのチェーンを描画する
+//
+void OillineDetector2::draw_ipoint_chain(Mat &img, vector<iPoint> &chain, Scalar color )
+{
+	for( int i=0; i<chain.size(); i++ )
+	{
+		circle( img, Point(chain[i].x, (int)(chain[i].y+0.5)), 1, color, -1);
+	}
+	
+}
+
+//
+// 複数のiPointのチェーンを描画する
+//
+void OillineDetector2::draw_ipoint_chains(Mat &img, vector<vector<iPoint> > &chains, Scalar color )
+{
+	for( int i=0; i<chains.size(); i++ )
+	{
+		draw_ipoint_chain( img, chains[i], color );
+	}
+	
+}
+
+

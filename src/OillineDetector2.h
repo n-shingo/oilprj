@@ -8,6 +8,11 @@ using namespace cv;
 
 namespace sn{
 
+	typedef struct
+	{
+		int x;
+		double y;
+	}iPoint;
 
 	// エッジ線検出器クラス
 	class OillineDetector2{
@@ -116,6 +121,15 @@ namespace sn{
 		// 俯瞰画像上の線と点[pixe]の実空間上の距離を算出する
 		// rho,theta :俯瞰画像上の線, points:俯瞰画像上の点群
 		double average_distance_points_and_line( double rho, double theta, vector<Point2d> &points );
+		
+		
+		// サイドの段差検出する関数
+		int is_sidestep( vector <vector<Point> > &p_chains, vector< vector<double> > &d_chains, bool left, Mat &img );
+		
+		// iPointのチェーンを描画する
+		void draw_ipoint_chain(Mat &img, vector<iPoint> &chain, Scalar color );
+		void draw_ipoint_chains( Mat &img, vector<vector<iPoint> > &chains, Scalar color );
+		
 
 
 		////////////////////
@@ -198,6 +212,10 @@ namespace sn{
 		double _d_gl;  // 車軸とカメラ画像最下部までの距離[mm]
 		double _dpp_x; // x軸方向の距離変換係数[mm/pix]
 		double _dpp_y; // y軸方向の距離変換係数[mm/pix]
+		
+		// サイド段差検出に関する変数
+		int _stepL[2];
+		int _stepR[2];
 	};
 
 } // nemespace gp
