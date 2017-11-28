@@ -26,7 +26,7 @@ namespace sn{
 		OillineDetector2();
 
 		// エッジ抽出実行
-		int Execute(Mat &src, double *dist, double *gl_theta, Mat &result_img, bool debug=false);
+		int Execute(Mat &src, double *dist, double *gl_theta, int *step, Mat &result_img, bool debug=false);
 
 		/////////////////
 		// プロパティ   //
@@ -49,6 +49,10 @@ namespace sn{
 		void SetDgl(double d_gl){ _d_gl = d_gl; }  // D_gl(車軸とカメラ画像最下部までの距離[mm])を設定
 		void SetDppX(double dpp_x){ _dpp_x = dpp_x; } // DppX(x軸方向の距離変換係数[mm/pix])を設定
 		void SetDppY(double dpp_y){ _dpp_y = dpp_y; } // DppY(y軸方向の距離変換係数[mm/pix])を設定
+		
+		// サイド段差の検出関連のプロパティ
+		void SetStepBufSize( int size ){ _step_buf_size = size; }
+		void SetStepMoveTh( int th ){ _step_mv_th = th; }
 
 
 	private:
@@ -126,7 +130,9 @@ namespace sn{
 		// サイドの段差検出する関数
 		int is_sidestep( vector <vector<Point> > &p_chains, vector< vector<double> > &d_chains, bool left, Mat &img );
 		
-		// iPointのチェーンを描画する
+		// Point, iPointのチェーンを描画する
+		void draw_point_chain(Mat &img, vector<Point> &chain, Scalar color );
+		void draw_point_chains( Mat &img, vector<vector<Point> > &chains, Scalar color );
 		void draw_ipoint_chain(Mat &img, vector<iPoint> &chain, Scalar color );
 		void draw_ipoint_chains( Mat &img, vector<vector<iPoint> > &chains, Scalar color );
 		
@@ -213,9 +219,19 @@ namespace sn{
 		double _dpp_x; // x軸方向の距離変換係数[mm/pix]
 		double _dpp_y; // y軸方向の距離変換係数[mm/pix]
 		
-		// サイド段差検出に関する変数
+		//
+		// 以下再度段差検出に関する変数
+		//
+		
+		// 段差注目位置
 		int _stepL[2];
 		int _stepR[2];
+		
+		// ラインの差をを見るためのバッファサイズ
+		int _step_buf_size;
+		
+		// ラインの差のしきい値[pixel]
+		int _step_mv_th;
 	};
 
 } // nemespace gp

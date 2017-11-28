@@ -2,7 +2,6 @@
 #include <iostream>
 #include <sys/stat.h>
 #include "opencv2/opencv.hpp"
-#include "OillineDetector.h"
 #include "OillineDetector2.h"
 #include "tool.h"
 
@@ -31,30 +30,26 @@ int main( int argc, char **argv )
 		cout << "directory '" << dirname << "' dones not exist!" << endl << endl;
 
 	
-	OillineDetector det;
 	OillineDetector2 det2;
 	det2.SetMaxSlitCount( 4 );
 	////////////////////////////////////
     // 以下の値を実験で求め直すこと！ //
 	////////////////////////////////////
-    det.SetCamTopForBird( 0 );  // 俯瞰画像上部に対応する前画像のy座標
-    det.SetBirdHeight( 480 );  // 俯瞰画像の高さ[pix]
-    det.SetBirdBtmX( 215, 425 );  // 俯瞰画像下部の左右x座標
-    det.SetDgl( 260 );   // D_gl(車軸とカメラ画像最下部までの距離[mm])を設定
-    det.SetDppX( 2.521 ); // DppX(x軸方向の距離変換係数[mm/pix])を設定
-    det.SetDppY( 2.238 ); // DppY(y軸方向の距離変換係数[mm/pix])を設定
-
     det2.SetCamTopForBird( 0 );  // 俯瞰画像上部に対応する前画像のy座標
     det2.SetBirdHeight( 480 );  // 俯瞰画像の高さ[pix]
     det2.SetBirdBtmX( 215, 425 );  // 俯瞰画像下部の左右x座標
     det2.SetDgl( 260 );   // D_gl(車軸とカメラ画像最下部までの距離[mm])を設定
     det2.SetDppX( 2.521 ); // DppX(x軸方向の距離変換係数[mm/pix])を設定
     det2.SetDppY( 2.238 ); // DppY(y軸方向の距離変換係数[mm/pix])を設定
-
+    
+    
+    // ロボットの速度が遅い時は大きい値に変更すると良い
+    det2.SetStepBufSize( 3 );  // 通常3, 遅いと5良いかも
+    
 
 	double dist, theta;
 	Mat img, result, result2;
-	int key;
+	int step, key;
 	bool playing = true;
 
 	while(1){
@@ -69,20 +64,18 @@ int main( int argc, char **argv )
 			continue;
 		}
 
-		//timerStart();
-		//det.Execute( img, &dist, &theta, result );
-		//cout << "process time 1: " << timerTime() << " [sec]" << endl;
-		//imshow( "result", result);
-
 		// 処理実行
 		timerStart();
-		det2.Execute( img, &dist, &theta, result2, true );
+		det2.Execute( img, &dist, &theta, &step, result2, true );
 		cout << "process time 2: " << timerTime() << " [sec]" << endl;
 		imshow( "result2", result2);
 
 		// 溶接幅の表示
 		double weld_width = det2.GetWeldWidthMM();
 		cout << "溶接幅[mm]: " << weld_width << endl;
+		
+		// サイド段差結果の表示
+		cout << "サイド段差: " << step << endl;
 
 		while(1){
 			key = waitKey(1);

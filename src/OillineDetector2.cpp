@@ -1,5 +1,6 @@
 #include <sys/time.h>
 #include <list>
+#include <limits>
 #include "opencv2/opencv.hpp"
 #include "OillineDetector2.h"
 #include "tool.h"
@@ -121,13 +122,20 @@ OillineDetector2::OillineDetector2(){
 	_stepL[1] = 200;
 	_stepR[0] = 440;
 	_stepR[1] = 560;
+	
+	// ラインの差をを見るためのバッファサイズ
+	_step_buf_size = 3;
+		
+	// ラインの差のしきい値[pixel]
+	_step_mv_th = 5;
+
 
 }
 
 //
 // エッジ抽出実行
 //
-int OillineDetector2::Execute(Mat &src, double *dist, double *gl_theta, Mat &result_img, bool debug){
+int OillineDetector2::Execute(Mat &src, double *dist, double *gl_theta, int *step, Mat &result_img, bool debug){
 
 
 	// 初期化
@@ -189,7 +197,6 @@ int OillineDetector2::Execute(Mat &src, double *dist, double *gl_theta, Mat &res
 	//
 	remove_flat_peaks( chains, gray, _flat_peak_th );
 
-
 	//
 	// 短いチェーンを削除
 	//
@@ -212,6 +219,11 @@ int OillineDetector2::Execute(Mat &src, double *dist, double *gl_theta, Mat &res
 	intplChains = interpolate_chains( chains );
 
 
+	// ここまでのchain 画像作成
+	Mat chain_img = Mat::zeros( h, w, CV_8UC3);
+	for( int i=0; i<chains.size(); i++ )
+		polylines( chain_img, chains[i], false, Scalar(215,176,255) );
+			
 	// 平滑化で細かい振動を除去
 	vector< vector<double> > smoothChains;
 	for( int i=0; i<intplChains.size(); i++ ){
@@ -219,11 +231,10 @@ int OillineDetector2::Execute(Mat &src, double *dist, double *gl_theta, Mat &res
 		smoothChains.push_back(chain);
 	}
 	
-	// 両サイドに段差があるか調べる
-	Mat step_img = Mat::zeros( _camH, _camW, CV_8UC3);
-	is_sidestep( chains, smoothChains, true, step_img);
-	is_sidestep( chains, smoothChains, false, step_img);
-	imshow( "step", step_img );
+	// 両サイドの段差を調べる
+	int l_step = is_sidestep( chains, smoothChains, true, chain_img);
+	int r_step = is_sidestep( chains, smoothChains, false, chain_img);
+	*step = l_step + 2*r_step;
 
 	//
 	// 曲率を計算
@@ -345,13 +356,6 @@ int OillineDetector2::Execute(Mat &src, double *dist, double *gl_theta, Mat &res
 		circle( bird_img, Point(x,y), 3, result_color );
 	}
 	
-	//
-	//  サイドステップ画像
-	//
-	rectangle( src, Point(0,0), Point(_stepL[0], _camH), Scalar(0,0,0),-1, 1);
-	rectangle( src, Point(_stepL[1],0), Point(_stepR[0], _camH), Scalar(0,0,0),-1, 1);
-	rectangle( src, Point(_stepR[1],0), Point(_camW, _camH), Scalar(0,0,0),-1, 1);
-
 
 	//
 	// 結果画像作成
@@ -362,9 +366,6 @@ int OillineDetector2::Execute(Mat &src, double *dist, double *gl_theta, Mat &res
 	if( debug ){
 		stackImages(src);
 		stackImages(red_img);
-		Mat chain_img( src.size(), CV_8UC3, Scalar(0,0,0) );
-		for( int i=0; i<chains.size(); i++ )
-			polylines( chain_img, chains[i], false, Scalar(215,176,255) );
 		stackImages(chain_img);
 	}
 	result_img = stackImages(bird_img);
@@ -1123,16 +1124,22 @@ double OillineDetector2::average_distance_points_and_line( double rho, double th
 //
 int OillineDetector2::is_sidestep( vector <vector<Point> > &p_chains, vector< vector<double> > &d_chains, bool left, Mat &img )
 {
+	
 	double enough_data_ratio = 0.7;
-	int enough_cnt = 3;
-	int move_th = 5;
 	
 	// これまでのデータを蓄積しておくLIST
-	static list<double> list_UL, list_DL, list_UR, list_DR;
+	static list<double> list_UL, list_DL, list_UR, list_DR;;
 	list<double> *list_up = left ? &list_UL : &list_UR;
 	list<double> *list_dn = left ? &list_DL : &list_DR;
+
+    // 念の為、データ数を調節しておく
+	while( list_up->size() >= _step_buf_size ){
+		list_up->pop_front();
+		list_dn->pop_front();
+	}
 	
-	cout << list_up->size() << endl;
+	static bool last_isStepL=false, last_isStepR=false;
+	bool   *last_isStep = left ? &last_isStepL : &last_isStepR;
 	
 	// サイズチェック
 	if( p_chains.size() != d_chains.size() ){
@@ -1159,9 +1166,15 @@ int OillineDetector2::is_sidestep( vector <vector<Point> > &p_chains, vector< ve
 			chains.push_back(chain);
 	}
 	
+	// ２個(上下に)なければ、不正で終了
 	if( chains.size() < 2 ){
-		list_up->clear();
-		list_dn->clear();
+		list_up->push_back(NAN);
+		list_dn->push_back(NAN);
+		if( list_up->size() == _step_buf_size ){
+			list_up->pop_front();
+			list_dn->pop_front();
+		}
+		*last_isStep = false;
 		return 0;
 	}
 	
@@ -1172,9 +1185,16 @@ int OillineDetector2::is_sidestep( vector <vector<Point> > &p_chains, vector< ve
 		if( chains[i][0].y < chains[up_index][0].y ) up_index = i;
 		if( chains[i][0].y > chains[dn_index][0].y ) dn_index = i;
 	}
+	
+	// 最上と最小が同じであれば、不正で終了
 	if( up_index == dn_index ){
-		list_up->clear();
-		list_dn->clear();
+		list_up->push_back(NAN);
+		list_dn->push_back(NAN);
+		if( list_up->size() == _step_buf_size ){
+			list_up->pop_front();
+			list_dn->pop_front();
+		}
+		*last_isStep = false;
 		return 0;
 	}
 	vector< iPoint > chain_up = chains[up_index];
@@ -1184,11 +1204,16 @@ int OillineDetector2::is_sidestep( vector <vector<Point> > &p_chains, vector< ve
 	draw_ipoint_chain( img, chain_up, Scalar(0,255,0) );
 	draw_ipoint_chain( img, chain_dn, Scalar(0,255,0) );
 
-	// 十分なデータ量かチェック
+	// 横に十分にな長さのデータかチェック、不十分ならば不正で終了
 	double enough_size = enough_data_ratio *(step[1]-step[0] );
 	if( enough_size > chain_up.size() || enough_size > chain_dn.size() ){
-		list_up->clear();
-		list_dn->clear();
+		list_up->push_back(NAN);
+		list_dn->push_back(NAN);
+		if( list_up->size() == _step_buf_size ){
+			list_up->pop_front();
+			list_dn->pop_front();
+		}
+		*last_isStep = false;
 		return 0;
 	}
 	
@@ -1205,35 +1230,69 @@ int OillineDetector2::is_sidestep( vector <vector<Point> > &p_chains, vector< ve
 	list_dn->push_back(ave_dn);
 	
 	
-	// 十分なデータ数かチェック
-	if( list_up->size() < enough_cnt )
+	// 十分なデータ数がなければ終了
+	if( list_up->size() < _step_buf_size ){
+		*last_isStep = false;
 		return 0;
+	}
+		
+	// 先頭データがNANであれば、先頭を破棄して終了
+	if( isnan(list_up->front()) != 0 ){
+		list_up->pop_front();
+		list_dn->pop_front();
+		*last_isStep = false;
+		return 0;
+	}
 	
 	
 	// 動いているかチェック
 	double dif_up = list_up->front() - ave_up;
 	double dif_dn = list_dn->front() - ave_dn;
-	bool is_move_dn = fabs( dif_dn ) > move_th;
+	bool is_move_up = fabs( dif_up ) > _step_mv_th;
+	bool is_move_dn = fabs( dif_dn ) > _step_mv_th;
 	bool is_step = false;
-	if( is_move_dn ){
-		if( fabs(dif_up-dif_dn) > move_th )
+	if( !is_move_up && is_move_dn ){
+		if( fabs(dif_up-dif_dn) > _step_mv_th )
 			is_step = true;
 	}
+	//cout << "dif_up, dif_dn: " << dif_up << ", " << dif_dn << ", " << fabs(dif_up-dif_dn) << endl;
 	
 	// 過去データ破棄
 	list_up->pop_front();
 	list_dn->pop_front();
 	
 
-	// 段差であれば赤く上書き描画
-	if( is_step )
+	// 段差であれば赤く上書き描画 & 1 を返す
+	if( !(*last_isStep) && is_step ){
 		draw_ipoint_chain( img, chain_dn, Scalar(0,0,255) );
-
-	// 終了
-	if( is_step )
+		*last_isStep = is_step;
 		return 1;
-	else
+	}
+	else{
+		*last_isStep = is_step;
 		return 0;
+	}
+}
+
+//
+// Pointのチェーンを描画する
+//
+void OillineDetector2::draw_point_chain(Mat &img, vector<Point> &chain, Scalar color )
+{
+	int len = chain.size();
+	for( int i=0; i<len-1; i++ )
+		line(img, chain[i], chain[i+1], color, 1, CV_AA);
+}
+
+//
+// 複数のPointのチェーンを描画する
+//
+void OillineDetector2::draw_point_chains( Mat &img, vector<vector<Point> > &chains, Scalar color )
+{
+	for( int i=0; i<chains.size(); i++ )
+	{
+		draw_point_chain( img, chains[i], color );
+	}
 }
 
 //

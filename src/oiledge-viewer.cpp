@@ -90,14 +90,16 @@ int main(int argc, char ** argv)
 		char key;
 
 		// ssmからデータ取得
-		edgePosReader.readLast();
-		OilEdgePos ep = edgePosReader.data;
+		if( edgePosReader.readNew() ){
+			OilEdgePos ep = edgePosReader.data;
 
-		// データ表示
-		cout << "status:" << ep.status
-			<< " dist:" << ep.dist
-			<< " theta:" << ep.theta
-			<< endl;
+			// データ表示
+			cout << "status:" << ep.status
+				<< " dist:" << ep.dist
+				<< " theta:" << ep.theta
+				<< " step:" << ep.step
+				<< endl;
+		}
 
         usleep(25000);
 	}

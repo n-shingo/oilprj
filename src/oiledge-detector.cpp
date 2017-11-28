@@ -145,7 +145,7 @@ int main(int argc, char ** argv)
 			// エッジの位置と向きを計算
 			OilEdgePos ep;
 			double dist;
-			ep.status = det.Execute(frm, &dist, &ep.theta, res_img, debug_view);
+			ep.status = det.Execute(frm, &dist, &ep.theta, &ep.step, res_img, debug_view);
 			ep.dist = (int)dist;
 
 			// SSMにEdgePos書き込み
